@@ -9,4 +9,7 @@ export default defineConfig({
     react(),
     nodePolyfills(),
   ],
+  build: {
+    outDir: 'docs',
+  },
 })
