@@ -25,7 +25,7 @@ type Data = Results & {
 
 function App() {
 	const [game] = useState(new Chess())
-	const [moves, setMoves] = useState<Move[]>([])
+	const [moves, setMoves] = useState<Pick<Move, 'uci' | 'san'>[]>([])
 	const [data, setData] = useState<Data | null>(null)
 
 	const san = moves.map(move => move.san)
@@ -51,7 +51,7 @@ function App() {
 			<h1 className="">Opening Explorer PoC</h1>
 			<p>
 				<strong>Moves:</strong> {san.map((move, i) => <>
-					{i % 2 ? ' ' : ` ${i / 2 + 1}.`} <span onClick={() => {
+					{i % 2 ? ' ' : ` ${i / 2 + 1}.`} <span key={i} onClick={() => {
 						const nextMoves = moves.slice(0, i + 1)
 						setMoves(nextMoves)
 						game.reset()
@@ -73,16 +73,28 @@ function App() {
 						<strong>Next Move:</strong>
 					</p>
 					<ul className="list-disc list-inside">
-						{data?.moves.map(move => {
-							return <li key={move.uci} onClick={() => {
+						{data?.moves.map(move =>
+							<li key={move.uci} onClick={() => {
 								setMoves([...moves, move])
 								game.move(move.san)
 							}} style={{ cursor: 'pointer' }}>{Math.floor(n / 2) + 1}. {n % 2 ? '...' : ''}{move.san}</li>
-						})}
+						)}
 					</ul>
 				</div>
 				<div className="flex-1">
-					<Chessboard position={game.fen()} customArrows={data?.moves.map(move => move.uci.split(/(?=..$)/) as Arrow)} />
+					<Chessboard
+						position={game.fen()} customArrows={data?.moves.map(move => move.uci.split(/(?=..$)/) as Arrow)}
+						onPieceDrop={(sourceSquare, targetSquare) => {
+							try {
+								const result = game.move({ from: sourceSquare, to: targetSquare })
+								setMoves([...moves, { uci: result.lan, san: result.san }])
+								return true
+							}
+							catch(e) {
+								return false
+							}
+						}}
+					/>
 				</div>
 			</div>
 		</>
