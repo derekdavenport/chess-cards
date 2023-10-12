@@ -134,10 +134,13 @@ function App() {
 									//setCustomArrows(moves.map(move => [move.from, move.to]))
 									setLegalMoves(moves.map(move => move))
 								}
+								// click move
 								else if (selectedSquare && legalMoves.find(move => move.to == square) !== undefined) {
 									const result = game.move({ from: selectedSquare, to: square })
 									setMoves([...moves, { uci: result.lan, san: result.san }])
 									setSelectedSquare(undefined)
+									setLegalMoves([])
+									setLegalSquare(undefined)
 								}
 								else {
 									setSelectedSquare(undefined)
