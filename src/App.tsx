@@ -189,11 +189,14 @@ function App() {
 								const result = game.move({ from: sourceSquare, to: targetSquare })
 								setMoves([...moves, { uci: result.lan, san: result.san }])
 								setSelectedSquare(undefined)
+								setLegalMoves([])
+								setLegalSquare(undefined)
 								return true
 							}
 							catch (e) {
 								setSelectedSquare(undefined)
 								setLegalMoves([])
+								setLegalSquare(undefined)
 								return false
 							}
 						}}
