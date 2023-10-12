@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import './App.css'
-import { Chess } from "chess.js";
+import { Chess, type Move } from "chess.js";
 import { Chessboard } from "react-chessboard"
 import type { Arrow, CustomSquareStyles, Square } from "react-chessboard/dist/chessboard/types"
 
@@ -10,22 +10,25 @@ type Results = {
 	black: number
 }
 
-type Move = Results & {
+type BookMove = Results & {
 	uci: string
 	san: string
 }
 
 type Data = Results & {
-	moves: Move[]
+	moves: BookMove[]
 	opening: {
 		eco: string
 		name: string
 	} | null
 }
 
+const captureBG = 'radial-gradient(circle, rgba(0,0,0,0) 0%, rgba(0,0,0,0) 80%, rgba(20,85,30,0.3) 80%'
+const moveBG = 'radial-gradient(circle, rgba(20,85,30,0.3) 0%, rgba(20,85,30,0.3) 20%, rgba(0,0,0,0) 20%'
+
 function App() {
 	const [game] = useState(new Chess())
-	const [moves, setMoves] = useState<Pick<Move, 'uci' | 'san'>[]>([])
+	const [moves, setMoves] = useState<Pick<BookMove, 'uci' | 'san'>[]>([])
 	const [data, setData] = useState<Data | null>(null)
 
 	const san = moves.map(move => move.san)
@@ -49,20 +52,29 @@ function App() {
 	const n = moves.length
 
 	const [selectedSquare, setSelectedSquare] = useState<Square>()
-	const [legalMoves, setLegalMoves] = useState<Square[]>([])
+	const [legalMoves, setLegalMoves] = useState<Move[]>([])
+	const [legalSquare, setLegalSquare] = useState<Square | undefined>()
 	const [customArrows, setCustomArrows] = useState<Arrow[] | undefined>()
-	const customSquareStyles: CustomSquareStyles = {
-		...legalMoves.reduce((styles, square) => {
-			styles[square] = { background: 'radial-gradient(circle, rgba(20,85,30,0.3) 0%, rgba(20,85,30,0.3) 20%, rgba(0,0,0,0) 20%' }
-			return styles
-		}, ({} as CustomSquareStyles)),
-	}
+	const customSquareStyles: CustomSquareStyles = {}
+	// 	...legalMoves.reduce((styles, square) => {
+	// 		styles[square] = { background: 'radial-gradient(circle, rgba(20,85,30,0.3) 0%, rgba(20,85,30,0.3) 20%, rgba(0,0,0,0) 20%' }
+	// 		return styles
+	// 	}, ({} as CustomSquareStyles)),
+	// }
 	if (selectedSquare) {
 		customSquareStyles[selectedSquare] = { background: 'rgba(20,85,30,.5)' }
 	}
+	// show previous move
 	if (moves.length) {
 		customSquareStyles[moves[moves.length - 1].uci.slice(0, 2) as Square] = { background: 'rgba(155,199,0,.41)' }
 		customSquareStyles[moves[moves.length - 1].uci.slice(2) as Square] = { background: 'rgba(155,199,0,.41)' }
+	}
+	for (const legalMove of legalMoves) {
+		// console.log('legalMove', legalMove)
+		customSquareStyles[legalMove.to] = { background: legalMove.captured ? captureBG : moveBG }
+	}
+	if (legalSquare) {
+		customSquareStyles[legalSquare] = { background: 'rgba(20,85,30,0.3)' }
 	}
 
 	return (
@@ -74,6 +86,7 @@ function App() {
 						const nextMoves = moves.slice(0, i + 1)
 						setMoves(nextMoves)
 						setSelectedSquare(undefined)
+						setLegalMoves([])
 						game.reset()
 						nextMoves.forEach(move => game.move(move.san))
 					}} style={{ cursor: 'pointer' }}>{move}</span>
@@ -98,6 +111,7 @@ function App() {
 							<li key={move.uci} onClick={() => {
 								setMoves([...moves, move])
 								setSelectedSquare(undefined)
+								setLegalMoves([])
 								game.move(move.san)
 							}} style={{ cursor: 'pointer' }}>{Math.floor(n / 2) + 1}. {n % 2 ? '...' : ''}{move.san}</li>
 						)}
@@ -107,6 +121,7 @@ function App() {
 					<Chessboard
 						position={game.fen()} customArrows={customArrows}
 						onSquareClick={(square) => {
+							// console.log(selectedSquare, legalMoves, square)
 							if (square == selectedSquare) {
 								setSelectedSquare(undefined)
 								//setCustomArrows(data?.moves.map(move => move.uci.split(/(?=..$)/) as Arrow))
@@ -117,7 +132,12 @@ function App() {
 									setSelectedSquare(square)
 									const moves = game.moves({ square, verbose: true })
 									//setCustomArrows(moves.map(move => [move.from, move.to]))
-									setLegalMoves(moves.map(move => move.to))
+									setLegalMoves(moves.map(move => move))
+								}
+								else if (selectedSquare && legalMoves.find(move => move.to == square) !== undefined) {
+									const result = game.move({ from: selectedSquare, to: square })
+									setMoves([...moves, { uci: result.lan, san: result.san }])
+									setSelectedSquare(undefined)
 								}
 								else {
 									setSelectedSquare(undefined)
@@ -126,18 +146,34 @@ function App() {
 								}
 							}
 						}}
-						isDraggablePiece={({piece, sourceSquare}) => {
-							console.log(piece, sourceSquare)
+						onMouseOverSquare={(square) => {
+							if (legalMoves.find(move => move.to == square) !== undefined) {
+								setLegalSquare(square)
+							}
+							else {
+								setLegalSquare(undefined)
+							}
+						}}
+						isDraggablePiece={({piece}) => {
+							//console.log(piece, sourceSquare)
 							return piece[0] == game.turn()
 						}}
 						
 						// I think since this function comes from dnd, changes don't work in hot update, must refresh
-						onPieceDragBegin={(piece, sourceSquare) => {
-							console.log('onPieceDragBegin', piece, sourceSquare)
+						onPieceDragBegin={(_piece, sourceSquare) => {
+							// console.log('onPieceDragBegin', piece, sourceSquare)
 							setSelectedSquare(sourceSquare)
 							const moves = game.moves({ square: sourceSquare, verbose: true })
 							//setCustomArrows(moves.map(move => [move.from, move.to]))
-							setLegalMoves(moves.map(move => move.to))
+							setLegalMoves(moves)
+						}}
+						onDragOverSquare={(square) => {
+							if (legalMoves.find(move => move.to == square) !== undefined) {
+								setLegalSquare(square)
+							}
+							else {
+								setLegalSquare(undefined)
+							}
 						}}
 						onPieceDragEnd={(piece, sourceSquare) => {
 							console.log('onPieceDragEnd', piece, sourceSquare)
@@ -158,6 +194,7 @@ function App() {
 								return false
 							}
 						}}
+						customDropSquareStyle={{}}
 						customSquareStyles={customSquareStyles}
 					/>
 				</div>
