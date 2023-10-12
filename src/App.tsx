@@ -47,12 +47,25 @@ function App() {
 	const uciComma = uci.join(',')
 
 	// remove moves until we find a name
-	let extraMoves = ''
 	let uciSpace = ''
-	for (let i = uci.length; !(uciSpace in book) && i > 0; i--) {
+	let i = uci.length
+	for (; !(uciSpace in book) && i > 0; i--) {
 		uciSpace = uci.slice(0, i).join(' ')
-		extraMoves = san.slice(i).join(', ')
 	}
+	// i++
+	// const extraMoves = san.slice(i).reduce((extraMoves, san, j) => {
+	// 	if (i % 2) { // odd
+	// 		if (!j) { // first extra move
+	// 			extraMoves += `${(i - 1) / 2 + 1}. ...`
+	// 		}
+	// 	}
+	// 	else {
+	// 		extraMoves += `${i / 2 + 1}. `
+	// 	}
+	// 	extraMoves += san + ' '
+	// 	i++
+	// 	return extraMoves
+	// }, '')
 
 	useEffect(() => {
 		(async function go() {
@@ -63,26 +76,28 @@ function App() {
 		})()
 	}, [uciComma])
 
+	const n = moves.length
+
 	return (
 		<>
 			<h1>Opening Explorer PoC</h1>
 			<p>
-				<strong>Moves:</strong> {san.map((move, i) => {
-					return <><span onClick={() => setMoves(moves.slice(0, i+1))} style={{ cursor: 'pointer' }}>{move}</span>{i % 2 && i < moves.length - 1 ? ',' : ''} </>
-				})}
+				<strong>Moves:</strong> {san.map((move, i) => <>
+					{i % 2 ? ' ' : ` ${i / 2 + 1}.`} <span onClick={() => setMoves(moves.slice(0, i + 1))} style={{ cursor: 'pointer' }}>{move}</span>
+				</>)}
 			</p>
 			<p>
-				<strong>Name:</strong> {book[uciSpace]?.eco} {book[uciSpace]?.name} {extraMoves ? `(+ ${extraMoves})` : ''}
+				<strong>Name:</strong> {book[uciSpace]?.eco} {book[uciSpace]?.name}
 			</p>
 			{moves.length ? <span onClick={() => setMoves(moves.slice(0, -1))} style={{ cursor: 'pointer' }}>..</span> : undefined}
 			<p>
 				<strong>Next Move:</strong>
 			</p>
-			<ol>
+			<ul>
 				{data?.moves.map(move => {
-					return <li key={move.uci} onClick={() => setMoves([...moves, move])} style={{ cursor: 'pointer' }}>{move.san}</li>
+					return <li key={move.uci} onClick={() => setMoves([...moves, move])} style={{ cursor: 'pointer' }}>{Math.floor(n / 2) + 1}. {n % 2 ? '...' : ''}{move.san}</li>
 				})}
-			</ol>
+			</ul>
 		</>
 	)
 }
