@@ -10,9 +10,12 @@ type Results = {
 	black: number
 }
 
-type BookMove = Results & {
+type MoveName = {
 	uci: string
 	san: string
+}
+
+type BookMove = Results & MoveName & {
 	averageRating: number
 	game: null
 }
@@ -27,14 +30,15 @@ type Data = Results & {
 
 const captureBG = 'radial-gradient(circle, rgba(0,0,0,0) 0%, rgba(0,0,0,0) 80%, rgba(20,85,30,0.3) 80%'
 const moveBG = 'radial-gradient(circle, rgba(20,85,30,0.3) 0%, rgba(20,85,30,0.3) 20%, rgba(0,0,0,0) 20%'
+const checkBG = 'radial-gradient(rgb(255, 0, 0) 0%, rgb(231, 0, 0) 25%, rgba(169, 0, 0, 0) 89%, rgba(158, 0, 0, 0) 100%)'
 
 function splitUci(uci: string) {
-	return [uci.slice(0, 2), uci.slice(2)] as [Square, Square]
+	return [uci.slice(0, 2), uci.slice(2, 4)] as [Square, Square]
 }
 
 function App() {
-	const [game] = useState(new Chess())
-	const [moves, setMoves] = useState<Pick<BookMove, 'uci' | 'san'>[]>([])
+	const [game] = useState(() => new Chess())
+	const [moves, setMoves] = useState<MoveName[]>([])
 	const [data, setData] = useState<Data>()
 
 	const san = moves.map(move => move.san)
@@ -49,7 +53,7 @@ function App() {
 			if (response.ok) {
 				const data = await response.json() as Data
 				setData(data)
-				console.log(data.moves)
+				// console.log(data.moves)
 				const timesPlayed = data.moves.map(move => move.white + move.draws + move.black)
 				const max = timesPlayed[0]
 				const min = timesPlayed[timesPlayed.length - 1]
@@ -72,13 +76,13 @@ function App() {
 	}, [uciComma])
 
 	const [selectedSquare, setSelectedSquare] = useState<Square>()
-	const [legalSquare, setLegalSquare] = useState<Square>()
+	const [placeableSquare, setPlaceableSquare] = useState<Square>()
 	const [customArrows, setCustomArrows] = useState<Arrow[]>()
 	const legalMoves: Move[] = selectedSquare ? game.moves({ square: selectedSquare, verbose: true }) : []
 
 	const customSquareStyles: CustomSquareStyles = {}
 	if (selectedSquare) {
-		customSquareStyles[selectedSquare] = { background: 'rgba(20,85,30,.5)' }
+		customSquareStyles[selectedSquare] = { backgroundColor: 'rgba(20,85,30,.5)' } // bgColor so can add (not overwrite) with bgImage when in check
 	}
 	// show previous move
 	if (moves.length) {
@@ -90,12 +94,25 @@ function App() {
 	for (const legalMove of legalMoves) {
 		customSquareStyles[legalMove.to] = { background: legalMove.captured ? captureBG : moveBG }
 	}
-	if (selectedSquare && legalSquare) {
-		customSquareStyles[legalSquare] = { background: 'rgba(20,85,30,0.3)' }
+	if (selectedSquare && placeableSquare) {
+		customSquareStyles[placeableSquare] = { backgroundColor: 'rgba(20,85,30,0.3)' }
 	}
-	// TODO: draw check
+	if (game.inCheck()) {
+		// find the king of current turn's color
+		const result = game.board().flat().find(v => v && v.color == game.turn() && v.type == 'k')
+		if (result) {
+			customSquareStyles[result.square] = { ...customSquareStyles[result.square], backgroundImage: checkBG }
+		}
+	}
 
 	const n = moves.length
+
+	function makeMove(move: {from: Square, to: Square, promotion?: string}) {
+		const result = game.move(move)
+		setMoves([...moves, { uci: result.lan, san: result.san }])
+		setSelectedSquare(undefined)
+		setPlaceableSquare(undefined)
+	}
 
 	return (
 		<>
@@ -148,10 +165,7 @@ function App() {
 								}
 								// click move
 								else if (selectedSquare && legalMoves.some(move => move.to == square)) {
-									const result = game.move({ from: selectedSquare, to: square })
-									setMoves([...moves, { uci: result.lan, san: result.san }])
-									setSelectedSquare(undefined)
-									setLegalSquare(undefined)
+									makeMove({from: selectedSquare, to: square })
 								}
 								else {
 									setSelectedSquare(undefined)
@@ -159,18 +173,19 @@ function App() {
 							}
 						}}
 						onMouseOverSquare={(square) => {
+							// console.log('mouseover', square)
 							if (legalMoves.some(move => move.to == square)) {
-								setLegalSquare(square)
+								setPlaceableSquare(square)
 							}
 							else {
-								setLegalSquare(undefined)
+								setPlaceableSquare(undefined)
 							}
 						}}
 						onMouseOutSquare={() => {
-							setLegalSquare(undefined)
+							// would like to do this when mouse goes off board, but also runs during promotion popup
+							//setPlaceableSquare(undefined)
 						}}
 						isDraggablePiece={({piece}) => {
-							//console.log(piece, sourceSquare)
 							return piece[0] == game.turn()
 						}}
 						
@@ -180,33 +195,45 @@ function App() {
 							setSelectedSquare(sourceSquare)
 						}}
 						onDragOverSquare={(square) => {
+							// console.log('dragover', square)
 							if (legalMoves.some(move => move.to == square)) {
-								setLegalSquare(square)
+								setPlaceableSquare(square)
 							}
 							else {
-								setLegalSquare(undefined)
+								setPlaceableSquare(undefined)
 							}
 						}}
-						onPieceDragEnd={(piece, sourceSquare) => {
-							console.log('onPieceDragEnd', piece, sourceSquare)
+						onPieceDragEnd={() => {
+							// console.log('onPieceDragEnd', piece, sourceSquare)
+							// setSelectedSquare(undefined)
+							// setPlaceableSquare(undefined)
 						}}
-						onPieceClick={(piece) => {
-							console.log('onPieceClick', piece)
+						onPieceClick={() => {
+							// console.log('onPieceClick', piece)
 						}}
 						onPieceDrop={(sourceSquare, targetSquare) => {
 							try {
-								const result = game.move({ from: sourceSquare, to: targetSquare })
-								setMoves([...moves, { uci: result.lan, san: result.san }])
-								setSelectedSquare(undefined)
-								setLegalSquare(undefined)
+								makeMove({ from: sourceSquare, to: targetSquare })
 								return true
 							}
 							catch (e) {
 								setSelectedSquare(undefined)
-								setLegalSquare(undefined)
+								setPlaceableSquare(undefined)
 								return false
 							}
 						}}
+						onPromotionPieceSelect={(piece) => {
+							// console.log(piece, selectedSquare, placeableSquare)
+							if (piece && selectedSquare && placeableSquare) {
+								makeMove({ from: selectedSquare, to: placeableSquare, promotion: piece[1].toLowerCase() })
+								return true
+							}
+							return false
+						}}
+						// onPromotionCheck={(square, targetSquare, piece) => {
+						// 	console.log(square, targetSquare, piece)
+						// 	return true
+						// }}
 						customDropSquareStyle={{}}
 						customSquareStyles={customSquareStyles}
 					/>
