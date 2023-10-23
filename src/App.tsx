@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { Fragment, useEffect, useState } from 'react'
 import './App.css'
 import { Chess, type Move } from "chess.js";
 import { Chessboard } from "react-chessboard"
@@ -28,16 +28,67 @@ type Data = Results & {
 	} | null
 }
 
-const captureBG = 'radial-gradient(circle, rgba(0,0,0,0) 0%, rgba(0,0,0,0) 80%, rgba(20,85,30,0.3) 80%'
-const moveBG = 'radial-gradient(circle, rgba(20,85,30,0.3) 0%, rgba(20,85,30,0.3) 20%, rgba(0,0,0,0) 20%'
+const pgn = `
+[Event "English Opening!󠁧󠁢󠁥󠁮󠁧󠁿: English Opening: Symmetrical Variation"]
+[Site "https://lichess.org/study/qkiEGvJu/nB01AMgN"]
+[Result "*"]
+[UTCDate "2021.10.30"]
+[UTCTime "18:11:43"]
+[Variant "Standard"]
+[ECO "A36"]
+[Opening "English Opening: Symmetrical Variation, Two Knights, Fianchetto Variation"]
+[Annotator "https://lichess.org/@/ChessBeginner210"]
+[ChapterMode "gamebook"]
+
+{ To start our English journey, we must be familiar with the Symmetrical Variation, the most basic kind of English Opening. This is an attempt to avoid theory by copying White's moves. Start with the English Opening. }
+1. c4 { Correct! } 1... c5 { This is the Symmetrical Variation. Black a) avoids theory, and b) stakes a claim to the d4 square.
+Here you should play Nc3. } 2. Nc3 { Usually, Black will play Nc6. } 2... Nc6 { Now how do we prepare to fianchetto our light-squared bishop? } { [%csl Gf1] } 3. g3 { Excellent! } (3. g4 { Right pawn, but you moved it too far. }) (3. Nf3 Nf6 4. d3) 3... Nf6 { Fianchetto your bishop! } 4. Bg2 { Perfect! Notice how all your active pieces are controlling d5 and e4. } { [%csl Gd5,Ge4] } 4... d6 { What pawn move do you make to increase your control over e4? } { [%csl Ge4] } 5. d3 { Great! } (5. f3 { Don't block your light-squared bishop! }) 5... g6 { What's the best square for this knight? } { [%csl Gg1] } 6. Nf3 { Outstanding! } 6... Bg7 { Protect your king! } 7. O-O { That's how you play the Symmetrical Variation. Let's see the second variation. } *
+`
+
+type Color = 'R' | 'G' | 'Y' | 'B'
+const pgnColors: Record<Color, string> = {
+	R: '#882020AA',
+	G: '#15781BAA',
+	Y: '#e68f00AA',
+	B: '#003088AA',
+}
+
+const captureBG = 'radial-gradient(rgba(0,0,0,0) 0%, rgba(0,0,0,0) 80%, rgba(20,85,30,0.3) 80%)'
+const moveBG = 'radial-gradient(rgba(20,85,30,0.3) 0%, rgba(20,85,30,0.3) 20%, rgba(0,0,0,0) 20%)'
 const checkBG = 'radial-gradient(rgb(255, 0, 0) 0%, rgb(231, 0, 0) 25%, rgba(169, 0, 0, 0) 89%, rgba(158, 0, 0, 0) 100%)'
+const circleBG = (c: Color) => `radial-gradient(rgba(0,0,0,0) 60%, ${pgnColors[c]} 60%, ${pgnColors[c]} 71%, rgba(0,0,0,0) 71%)`
 
 function splitUci(uci: string) {
 	return [uci.slice(0, 2), uci.slice(2, 4)] as [Square, Square]
 }
 
 function App() {
-	const [game] = useState(() => new Chess())
+	const [game] = useState(() => {
+		const game = new Chess()
+		game.loadPgn(pgn)
+		return game
+	})
+	console.log(game.history(), game.moveNumber(), game.getComment())
+	game.undo()
+	game.move('e1g1')
+	console.log(game.getComments())
+	useEffect(() => {
+		game.getComments().map(({ comment }) => {
+			console.log(comment)
+			const arrowRegEx = /\[%cal\s+([^\]]*)\]/g
+			const highlightRegEx = /\[%csl\s+([^\]]*)\]/g
+
+			for (let result = arrowRegEx.exec(comment); result != null; result = arrowRegEx.exec(comment)) {
+				const arrows = result[1].split(',').map(s => [...splitUci(s.slice(1)), pgnColors[s[0] as Color]] as Arrow)
+				setCustomArrows(arrows)
+			}
+
+			for (let result = highlightRegEx.exec(comment); result != null; result = highlightRegEx.exec(comment)) {
+				const colorSquares = result[1].split(',').map(s => [s.slice(1), s[0]] as [Square, Color])
+				setHighlights(colorSquares)
+			}
+		})
+	}, [])
 	const [moves, setMoves] = useState<MoveName[]>([])
 	const [data, setData] = useState<Data>()
 
@@ -65,7 +116,7 @@ function App() {
 					if (move.san == 'O-O') {
 						endSquare = 'g' + endSquare[1] as Square
 					}
-					else if(move.san == 'O-O-O') {
+					else if (move.san == 'O-O-O') {
 						endSquare = 'c' + endSquare[1] as Square
 					}
 					return [startSquare, endSquare, `rgba(0,48,136,${scale(timesPlayed[i])})`]
@@ -78,36 +129,49 @@ function App() {
 	const [selectedSquare, setSelectedSquare] = useState<Square>()
 	const [placeableSquare, setPlaceableSquare] = useState<Square>()
 	const [customArrows, setCustomArrows] = useState<Arrow[]>()
+	const [highlights, setHighlights] = useState<[Square, Color][]>([])
 	const legalMoves: Move[] = selectedSquare ? game.moves({ square: selectedSquare, verbose: true }) : []
 
-	const customSquareStyles: CustomSquareStyles = {}
+	const squareStyles: CustomSquareStyles = {}
 	if (selectedSquare) {
-		customSquareStyles[selectedSquare] = { backgroundColor: 'rgba(20,85,30,.5)' } // bgColor so can add (not overwrite) with bgImage when in check
+		squareStyles[selectedSquare] = { backgroundColor: 'rgba(20,85,30,.5)' } // bgColor so can add (not overwrite) with bgImage when in check
 	}
 	// show previous move
 	if (moves.length) {
 		const previousMove = moves[moves.length - 1]
 		const [startSquare, endSquare] = splitUci(previousMove.uci)
-		customSquareStyles[startSquare] = { background: 'rgba(155,199,0,.41)' }
-		customSquareStyles[endSquare] = { background: 'rgba(155,199,0,.41)' }
+		squareStyles[startSquare] = { backgroundColor: 'rgba(155,199,0,.41)' }
+		squareStyles[endSquare] = { backgroundColor: 'rgba(155,199,0,.41)' }
 	}
 	for (const legalMove of legalMoves) {
-		customSquareStyles[legalMove.to] = { background: legalMove.captured ? captureBG : moveBG }
+		// should overwrite previous move colors
+		squareStyles[legalMove.to] = { backgroundImage: legalMove.captured ? captureBG : moveBG }
 	}
 	if (selectedSquare && placeableSquare) {
-		customSquareStyles[placeableSquare] = { backgroundColor: 'rgba(20,85,30,0.3)' }
+		// should overwrite previous colors
+		squareStyles[placeableSquare] = { backgroundColor: 'rgba(20,85,30,0.3)' }
 	}
 	if (game.inCheck()) {
 		// find the king of current turn's color
 		const result = game.board().flat().find(v => v && v.color == game.turn() && v.type == 'k')
 		if (result) {
-			customSquareStyles[result.square] = { ...customSquareStyles[result.square], backgroundImage: checkBG }
+			squareStyles[result.square] = { ...squareStyles[result.square], backgroundImage: checkBG }
+		}
+	}
+	for (const [square, color] of highlights) {
+		const styles = squareStyles[square]
+		if (styles?.backgroundImage) {
+			styles.backgroundImage = circleBG(color) + ', ' + styles.backgroundImage
+		}
+		else {
+			squareStyles[square] = { ...styles, backgroundImage: circleBG(color) }
 		}
 	}
 
+
 	const n = moves.length
 
-	function makeMove(move: {from: Square, to: Square, promotion?: string}) {
+	function makeMove(move: { from: Square, to: Square, promotion?: string }) {
 		const result = game.move(move)
 		setMoves([...moves, { uci: result.lan, san: result.san }])
 		setSelectedSquare(undefined)
@@ -118,15 +182,15 @@ function App() {
 		<>
 			<h1 className="text-xl">Opening Explorer PoC</h1>
 			<p>
-				<strong>Moves:</strong> {san.map((move, i) => <>
-					{i % 2 ? ' ' : ` ${i / 2 + 1}.`} <span key={i} onClick={() => {
+				<strong>Moves:</strong> {san.map((move, i) => <Fragment key={i}>
+					{i % 2 ? ' ' : ` ${i / 2 + 1}.`} <span onClick={() => {
 						const nextMoves = moves.slice(0, i + 1)
 						setMoves(nextMoves)
 						setSelectedSquare(undefined)
 						game.reset()
 						nextMoves.forEach(move => game.move(move.san))
 					}} style={{ cursor: 'pointer' }}>{move}</span>
-				</>)}
+				</Fragment>)}
 			</p>
 			<p>
 				<strong>Name:</strong> {data?.opening && `${data?.opening.eco} ${data?.opening.name}`}
@@ -159,17 +223,15 @@ function App() {
 							if (square == selectedSquare) {
 								setSelectedSquare(undefined)
 							}
+							else if (game.turn() == game.get(square).color) {
+								setSelectedSquare(square)
+							}
+							// click move
+							else if (selectedSquare && legalMoves.some(move => move.to == square)) {
+								makeMove({ from: selectedSquare, to: square })
+							}
 							else {
-								if (game.turn() == game.get(square).color) {
-									setSelectedSquare(square)
-								}
-								// click move
-								else if (selectedSquare && legalMoves.some(move => move.to == square)) {
-									makeMove({from: selectedSquare, to: square })
-								}
-								else {
-									setSelectedSquare(undefined)
-								}
+								setSelectedSquare(undefined)
 							}
 						}}
 						onMouseOverSquare={(square) => {
@@ -185,10 +247,10 @@ function App() {
 							// would like to do this when mouse goes off board, but also runs during promotion popup
 							//setPlaceableSquare(undefined)
 						}}
-						isDraggablePiece={({piece}) => {
+						isDraggablePiece={({ piece }) => {
 							return piece[0] == game.turn()
 						}}
-						
+
 						// I think since this function comes from dnd, changes don't work in hot update, must refresh
 						onPieceDragBegin={(_piece, sourceSquare) => {
 							// console.log('onPieceDragBegin', piece, sourceSquare)
@@ -235,7 +297,7 @@ function App() {
 						// 	return true
 						// }}
 						customDropSquareStyle={{}}
-						customSquareStyles={customSquareStyles}
+						customSquareStyles={squareStyles}
 					/>
 				</div>
 			</div>
