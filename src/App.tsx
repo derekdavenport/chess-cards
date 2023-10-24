@@ -43,7 +43,7 @@ function App() {
 			<h1>Chess Cards</h1>
 			<div className="flex flex-col space-y-2">
 				<div>
-					Pick a <a href="https://lichess.org/studies">Lichess Study</a> and paste the address below
+					Pick a <a href="https://lichess.org/study">Lichess Study</a> and paste the address below
 				</div>
 				<div className="form-control w-full">
 					<label className="label" htmlFor="lichessStudyUrl">
