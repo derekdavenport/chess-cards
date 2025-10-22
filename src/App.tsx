@@ -76,39 +76,35 @@ function App() {
 				<p>
 					Choose a <a href="https://lichess.org/study">Lichess Study</a> and paste the address below
 				</p>
-				<div className="form-control w-full max-w-xs mx-auto">
-					<label className="label" htmlFor="lichessStudyUrl">
-						<span className="label-text">Lichess Study Address</span>
-						<span className="label-text-alt text-red-500">{lichessStudyUrlMessage ?? <span className="loading loading-spinner loading-xs text-primary" />}</span>
-					</label>
+				<fieldset className="fieldset w-full max-w-xs mx-auto">
+					<legend className="fieldset-legend">Lichess Study Address</legend>
 					<input
-						id="lichessStudyUrl" name="lichessStudyUrl" type="text" ref={studyInputRef}
+						id="lichessStudyUrl" name="lichessStudyUrl"
+						type="text"
+						className="input input-primary"
 						placeholder="https://lichess.org/study/whCVdUeM"
 						pattern={lichessStudyUrlRegExpString}
 						required
 						onChange={e => handleChangeLichessStudyUrl(e.target.value)}
-						className="input input-bordered w-full" />
-				</div>
-				<div className="form-control w-full max-w-xs mx-auto">
-					<label className="label" htmlFor="orientation">
-						<span className="label-text">Play as</span>
-					</label>
+					/>
+					<p className="label text-red-500">{lichessStudyUrlMessage ?? <span className="loading loading-spinner loading-xs text-primary" />}</p>
+				</fieldset>
+				<fieldset className="fieldset w-full max-w-xs mx-auto">
+					<legend className="fieldset-legend">Play as</legend>
 					<select
 						id="orientation" name="orientation"
-						className="select select-bordered w-full"
-						onChange={e => handleChangeOrientation(e.target.value)}
-					>
+						className="select select-primary"
+						onChange={e => handleChangeOrientation(e.target.value)}>
 						<option value="">Use Study Orientation</option>
 						<option value="white">Force White</option>
 						<option value="black">Force Black</option>
 					</select>
-
-				</div>
+				</fieldset>
 				<div className="tooltip mx-auto" data-tip={lichessStudyUrlMessage ? 'first give a Lichess Study address' : 'download deck'}>
 					<button
 						disabled={!!lichessStudyUrlMessage} onClick={downloadDeck}
 						className="btn btn-primary"
-					>download</button>
+					>Download</button>
 				</div>
 
 				<p>

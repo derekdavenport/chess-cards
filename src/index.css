@@ -1,9 +1,6 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
+@plugin "daisyui";
 
-@layer base {
-	a {
-		@apply underline;
-	}
+a {
+	text-decoration: underline;
 }
