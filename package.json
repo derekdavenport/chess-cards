@@ -11,7 +11,14 @@
     "aws": "pnpm build && aws s3 cp ./dist s3://chess.context.cards --recursive"
   },
   "dependencies": {
+    "@tanstack/query-core": "^5.90.5",
+    "@tanstack/react-query": "^5.90.5",
+    "@tanstack/react-query-devtools": "^5.90.2",
+    "cm-chess": "^3.5.3",
+    "jotai": "^2.15.0",
+    "jotai-tanstack-query": "^0.11.0",
     "react": "^19.2.0",
+    "react-chessboard": "^5.7.1",
     "react-dom": "^19.2.0"
   },
   "devDependencies": {
