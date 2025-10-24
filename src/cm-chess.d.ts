@@ -15,6 +15,7 @@ declare module 'cm-chess' {
 		'a2' | 'b2' | 'c2' | 'd2' | 'e2' | 'f2' | 'g2' | 'h2' |
 		'a1' | 'b1' | 'c1' | 'd1' | 'e1' | 'f1' | 'g1' | 'h1'
 
+	type Promotion = 'q' | 'r' | 'n' | 'b'
 	type Move = {
 		captured?: boolean
 		color: Color
@@ -30,7 +31,7 @@ declare module 'cm-chess' {
 		next: Move | undefined
 		piece: PieceSymbol
 		ply: number
-		promotion?: 'q' | 'r' | 'n' | 'b'
+		promotion?: Promotion
 		previous: Move | null
 		san: string
 		to: Square
@@ -57,6 +58,8 @@ declare module 'cm-chess' {
 	type UNDO_MOVE_EVENT = { type: EVENT_TYPE.undoMove, move: Move }
 	type INITIALIZED_EVENT = { type: EVENT_TYPE.initialized, fen: string }
 	type Event = ILLEGAL_MOVE_EVENT | LEGAL_MOVE_EVENT | UNDO_MOVE_EVENT | INITIALIZED_EVENT
+
+	type SAN = string
 
 	class Chess {
 		constructor(fenOrProps?: string | { fen?: string, pgn?: string });
@@ -141,7 +144,9 @@ declare module 'cm-chess' {
 		 * @param fen
 		 */
 		load(fen: string): void;
-		pgn: string;
+		pgn: {
+			render: () => string;
+		};
 		/**
 		 * Load a PGN with variations, NAGs, header and annotations. cm-chess uses cm-pgn
 		 * fot the header and history. See https://github.com/shaack/cm-pgn
@@ -155,7 +160,7 @@ declare module 'cm-chess' {
 		 * @param sloppy to allow sloppy SAN
 		 * @returns {{}|null}
 		 */
-		move(move: Partial<Move> | string, previousMove?: Move, sloppy?: boolean): Move | null;
+		move(move: Pick<Move, 'from' | 'to' | 'promotion'> | SAN, previousMove?: Move, sloppy?: boolean): Move | null;
 		/**
 		 * Return all valid moves
 		 * @param options {{ square: "e2", piece: "n", verbose: true }}

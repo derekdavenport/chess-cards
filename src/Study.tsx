@@ -1,6 +1,6 @@
 import { atom, ExtractAtomValue, useAtom } from "jotai"
 import { atomWithQuery } from "jotai-tanstack-query"
-import { Chess, FEN, Event } from "cm-chess";
+import { Chess, FEN, Event, Square, Move, Promotion } from "cm-chess";
 import { useState } from "react";
 import { QueryClient, useQueryClient } from "@tanstack/react-query";
 
@@ -9,8 +9,8 @@ interface PositionStats {
 	draws: number,
 	black: number,
 }
-interface ExplorerResponse extends PositionStats {
-	moves: Move[],
+interface ExplorerData extends PositionStats {
+	moves: LiMove[],
 	recentGames: Game[],
 	topGames: Game[]
 	opening: Opening | null,
@@ -19,7 +19,7 @@ interface Opening {
 	eco: string,
 	name: string
 }
-interface Move extends PositionStats {
+interface LiMove extends PositionStats {
 	uci: string,
 	san: string,
 	averageRating: number,
@@ -43,16 +43,18 @@ interface Player {
 }
 
 type DB = 'masters' | 'lichess' | 'player'
+
 const dbAtom = atom<DB>('masters')
 //const uciListAtom = atom<string[]>([])
-const uciAtom = atom((get) => get(uciListAtom).join(','))
+const uciAtom = atom(get => get(uciListAtom).join(','))
 type ExplorerQueryKey = ['explorer', ExtractAtomValue<typeof dbAtom>, ExtractAtomValue<typeof uciAtom>]
-async function explorerQueryFn({ queryKey: [, db, uci] }: { queryKey: ExplorerQueryKey }) {
-	const res = await fetch(`https://explorer.lichess.ovh/${db}?play=${uci}`)
-	return res.json() as Promise<ExplorerResponse>
+async function explorerQueryFn({ queryKey: [, db, fen] }: { queryKey: ExplorerQueryKey }): Promise<ExplorerData> {
+	const params = new URLSearchParams({ fen })
+	const res = await fetch(`https://explorer.lichess.ovh/${db}?${params}`)
+	return res.json()
 }
-const movesAtom = atomWithQuery<ExplorerResponse, Error, ExplorerResponse, ExplorerQueryKey>(get => ({
-	queryKey: ['explorer', get(dbAtom), get(uciAtom)],
+const movesAtom = atomWithQuery<ExplorerData, Error, ExplorerData, ExplorerQueryKey>(get => ({
+	queryKey: ['explorer', get(dbAtom), get(fenAtom)],
 	queryFn: explorerQueryFn,
 	staleTime: Infinity,
 }))
@@ -61,19 +63,24 @@ interface Pv {
 	moves: string,
 	cp: number,
 }
-interface AnalysisResponse {
+interface AnalysisData {
 	fen: string,
 	knodes: number,
 	depth: number,
 	pvs: Pv[],
 }
 type AnalysisQueryKey = ['analysis', ExtractAtomValue<typeof fenAtom>]
-const analysisAtom = atomWithQuery<AnalysisResponse, Error, AnalysisResponse, AnalysisQueryKey>((get) => ({
+async function analysisQueryFn({ queryKey: [, fen] }: { queryKey: AnalysisQueryKey }): Promise<AnalysisData> {
+	const params = new URLSearchParams({
+		fen,
+		multiPv: '5',
+	})
+	const res = await fetch(`https://lichess.org/api/cloud-eval?${params}`)
+	return res.json()
+}
+const analysisAtom = atomWithQuery<AnalysisData, Error, AnalysisData, AnalysisQueryKey>(get => ({
 	queryKey: ['analysis', get(fenAtom)],
-	queryFn: async ({ queryKey: [, fen] }) => {
-		const res = await fetch(`https://lichess.org/api/cloud-eval?fen=${encodeURIComponent(fen)}&multiPv=5`)
-		return res.json()
-	},
+	queryFn: analysisQueryFn,
 	staleTime: Infinity,
 }))
 
@@ -89,9 +96,9 @@ const nextMoveEvalsAtom = atom<{ [uci: string]: number }>((get) => {
 	}, {})
 })
 
-const game = new Chess()
+// const game = new Chess()
 // Stash in object to make 'mutable'. Remember to set after any changes.
-const gameAtom = atom<{ game: Chess }>({ game })
+const gameAtom = atom<{ game: Chess }>({ game: new Chess() })
 // const gameSignalAtom = atom<Event>({ type: 'initialized', fen: game.fen() })
 // gameSignalAtom.onMount = set => game.addObserver((event) => {
 // 	set(event)
@@ -118,44 +125,59 @@ const undoMoveAtom = atom(null, (get, set) => {
 	set(gameAtom, { game })
 })
 
-async function buildPGN(queryClient: QueryClient, startingFen: string, db: DB, maxDepth: number, variationsCount: number, playedPercent: number, bestMovesCount: number): string {
-	const game = new Chess(startingFen)
+function uciToMove(uci: string) {
+	return { from: uci.slice(0, 2) as Square, to: uci.slice(2, 4) as Square, promotion: uci.length > 4 ? uci[4] as Promotion : undefined }
+}
+
+async function buildPGN(queryClient: QueryClient, game: Chess, db: DB, maxDepth: number, variationsCount: number, playedPercent: number, bestMovesCount: number): Promise<string> {
 	//game.history().map(move => move.uci).join
 
-	async function addMoves(fen: string, db: DB, depth: number, variationsCount: number, playedPercent: number) {
+	async function addMoves(fen: string, db: DB, depth: number) {
 		if (depth > maxDepth) return
-		const explorerPromise = queryClient.fetchQuery<ExplorerResponse, Error, ExplorerResponse, ExplorerQueryKey>({ queryKey: ['explorer', db, fen], queryFn: explorerQueryFn })
+		const explorerDataPromise = queryClient.fetchQuery<ExplorerData, Error, ExplorerData, ExplorerQueryKey>({ queryKey: ['explorer', db, fen], queryFn: explorerQueryFn })
 		//, () => fetch(`https://explorer.lichess.ovh/${db}?fen=${encodeURIComponent(game.fen())}`))
-		const analysisPromise = fetch(`https://lichess.org/api/cloud-eval?fen=${encodeURIComponent(game.fen())}&multiPv=5`)
-		const analysisResponse = await analysisPromise
-		const explorer = await explorerPromise
-		const analysis: AnalysisResponse = await analysisResponse.json()
-		const nextMoveEvals: { [uci: string]: number } = analysis.pvs.reduce((evals, pv) => {
-			const uci = pv.moves.split(' ')[0]
+		const analysisDataPromise = queryClient.fetchQuery<AnalysisData, Error, AnalysisData, AnalysisQueryKey>({ queryKey: ['analysis', fen], queryFn: analysisQueryFn })
+		//const analysisResponsePromise = fetch(`https://lichess.org/api/cloud-eval?fen=${encodeURIComponent(game.fen())}&multiPv=5`)
+
+		const explorerData = await explorerDataPromise
+		const analysisData = await analysisDataPromise
+		// get just the evals
+		const nextMoveEvals = analysisData.pvs.sort((a, b) => a.cp - b.cp).map(({ moves, cp }) => {
+			const uci = moves.split(' ')[0]
 			return {
-				...evals,
-				[uci]: pv.cp / 100
+				uci,
+				cp,
 			}
-		}, {})
-		const previousMove = game.history()[game.history().length - 1]
-		explorer.moves.reduce((bestMoves, move) => {
-			if (bestMoves.length < bestMovesCount) {
-				const totalGames = move.white + move.draws + move.black
-				const winPercent = game.turn() === 'w' ? move.white / totalGames : move.black / totalGames
-				if (winPercent * 100 >= playedPercent) {
-					bestMoves.push(move)
-				}
-			}
-			return bestMoves
-		}, [] as Move[]).forEach(move => {
-			game.move(move, previousMove)
+		}).slice(0, bestMovesCount)
+		// if it's white's turn, best moves are the highest cp
+		if (game.turn() === 'w') {
+			nextMoveEvals.reverse()
+		}
+		
+		const lastMove = game.lastMove() ?? undefined //game.history().length ? game.history()[game.history().length - 1] : undefined
+		const totalGames = explorerData.white + explorerData.draws + explorerData.black
+		const commonMovesPlayedEnough = explorerData.moves.slice(0, variationsCount).filter(move => {
+			const moveTotalGames = move.white + move.draws + move.black
+			const movePlayedPercent = moveTotalGames / totalGames * 100
+			return movePlayedPercent >= playedPercent
 		})
+		commonMovesPlayedEnough.forEach(({ uci }) => {
+			game.move(uciToMove(uci), lastMove)
+		})
+		nextMoveEvals.forEach(({ uci, cp }) => {
+			// if we haven't added this move
+			if (lastMove?.variations.findIndex(([move]) => move.uci === uci) !== -1) {
+				game.move(uciToMove(uci), lastMove)
+			}
+		})
+		return
+		//addMoves(game.fen(), db, depth + 1)
 
 	}
 
-	for (let i = 0; i < variationsCount; i++) {
-		const explorerResponse = await addMoves(game.fen(), db, 0, variationsCount, playedPercent)
-	}
+	addMoves(game.fen(), db, 0)
+
+	return game.pgn.render()
 	
 }
 
@@ -172,6 +194,7 @@ function Study() {
 	const [playedPercent, setPlayedPercent] = useState(25);
 	const [bestMovesCount, setBestMovesCount] = useState(1);
 	const [depth, setDepth] = useState(5);
+	const [{game}] = useAtom(gameAtom);
 
 	const queryClient = useQueryClient();
 
@@ -276,7 +299,7 @@ function Study() {
 			</select>
 		</fieldset>
 
-		<button onClick={() => buildPGN(queryClient)}>Go</button>
+		<button onClick={() => buildPGN(queryClient, game, db, depth, commonMovesCount, playedPercent, bestMovesCount)}>Go</button>
 	</>
 }
 
