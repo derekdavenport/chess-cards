@@ -1,6 +1,6 @@
 import { atom, ExtractAtomValue, useAtom } from "jotai"
 import { atomWithQuery } from "jotai-tanstack-query"
-import { Chess, FEN, Event, Square, Move, Promotion } from "cm-chess";
+import { Chess, FEN, Event, Square, Move, Promotion, Color } from "cm-chess";
 import { useState } from "react";
 import { QueryClient, useQueryClient } from "@tanstack/react-query";
 
@@ -44,7 +44,7 @@ interface Player {
 
 type DB = 'masters' | 'lichess' | 'player'
 
-const dbAtom = atom<DB>('masters')
+const dbAtom = atom<DB>('lichess')
 //const uciListAtom = atom<string[]>([])
 const uciAtom = atom(get => get(uciListAtom).join(','))
 type ExplorerQueryKey = ['explorer', ExtractAtomValue<typeof dbAtom>, ExtractAtomValue<typeof uciAtom>]
@@ -63,11 +63,13 @@ interface Pv {
 	moves: string,
 	cp: number,
 }
-interface AnalysisData {
+type AnalysisData = {
 	fen: string,
 	knodes: number,
 	depth: number,
 	pvs: Pv[],
+} | {
+	error: string
 }
 type AnalysisQueryKey = ['analysis', ExtractAtomValue<typeof fenAtom>]
 async function analysisQueryFn({ queryKey: [, fen] }: { queryKey: AnalysisQueryKey }): Promise<AnalysisData> {
@@ -84,14 +86,14 @@ const analysisAtom = atomWithQuery<AnalysisData, Error, AnalysisData, AnalysisQu
 	staleTime: Infinity,
 }))
 
-const nextMoveEvalsAtom = atom<{ [uci: string]: number }>((get) => {
+const nextMoveCpsAtom = atom<{ [uci: string]: number }>((get) => {
 	const analysis = get(analysisAtom).data
-	if (!analysis) return {}
+	if (!analysis || 'error' in analysis) return {}
 	return analysis.pvs.reduce((evals, pv) => {
 		const uci = pv.moves.split(' ')[0]
 		return {
 			...evals,
-			[uci]: pv.cp / 100
+			[uci]: pv.cp,
 		}
 	}, {})
 })
@@ -110,11 +112,14 @@ const fenAtom = atom<string>(get => get(gameAtom).game.fen())
 
 const uciListAtom = atom<string[]>(get => get(gameAtom).game.history().map(move => move.uci))
 
-
-
 const addMoveAtom = atom(null, (get, set, san: string) => {
 	const { game } = get(gameAtom)
 	const move = game.move(san)
+	const nextMoveCps = get(nextMoveCpsAtom)
+	const cp = nextMoveCps[move!.uci]
+	if (cp) {
+		move!.commentMove = `[%ce ${cp}][%eval ${(cp / 100).toFixed(2)}]`
+	}
 	set(gameAtom, { game })
 	// console.log('added move', san, move, game.fen())
 })
@@ -129,55 +134,162 @@ function uciToMove(uci: string) {
 	return { from: uci.slice(0, 2) as Square, to: uci.slice(2, 4) as Square, promotion: uci.length > 4 ? uci[4] as Promotion : undefined }
 }
 
-async function buildPGN(queryClient: QueryClient, game: Chess, db: DB, maxDepth: number, variationsCount: number, playedPercent: number, bestMovesCount: number): Promise<string> {
-	//game.history().map(move => move.uci).join
+function getMoveCp({ commentMove }: Move): number | undefined {
+	if (!commentMove) return
+	const ceMatch = commentMove.match(/\[%ce (\d+)\]/)
+	if (!ceMatch) return
+	return parseFloat(ceMatch[1])
+}
 
-	async function addMoves(fen: string, db: DB, depth: number) {
-		if (depth > maxDepth) return
-		const explorerDataPromise = queryClient.fetchQuery<ExplorerData, Error, ExplorerData, ExplorerQueryKey>({ queryKey: ['explorer', db, fen], queryFn: explorerQueryFn })
-		//, () => fetch(`https://explorer.lichess.ovh/${db}?fen=${encodeURIComponent(game.fen())}`))
-		const analysisDataPromise = queryClient.fetchQuery<AnalysisData, Error, AnalysisData, AnalysisQueryKey>({ queryKey: ['analysis', fen], queryFn: analysisQueryFn })
-		//const analysisResponsePromise = fetch(`https://lichess.org/api/cloud-eval?fen=${encodeURIComponent(game.fen())}&multiPv=5`)
+function getCpDiff(move: Move, cp: number): number | undefined {
+	const moveCp = getMoveCp(move)
+	if (moveCp === undefined) return
+	return move.color == 'w' ? cp - moveCp : moveCp - cp
+}
 
-		const explorerData = await explorerDataPromise
-		const analysisData = await analysisDataPromise
-		// get just the evals
-		const nextMoveEvals = analysisData.pvs.sort((a, b) => a.cp - b.cp).map(({ moves, cp }) => {
-			const uci = moves.split(' ')[0]
-			return {
-				uci,
-				cp,
-			}
-		}).slice(0, bestMovesCount)
-		// if it's white's turn, best moves are the highest cp
-		if (game.turn() === 'w') {
-			nextMoveEvals.reverse()
+function diffToNag(cpDiff: number | undefined): string | undefined {
+	if (cpDiff === undefined) return
+	if (cpDiff >= 100) {
+		return '2' // inaccuracy
+	}
+	if (cpDiff >= 300) {
+		return '4' // mistake
+	}
+}
+
+function getNextMoveCps(analysisData: AnalysisData, lastColor: Color) {
+	if ('error' in analysisData) return []
+	const nextMoveCps = analysisData.pvs.sort((a, b) => a.cp - b.cp).map(({ moves, cp }) => {
+		const uci = moves.split(' ')[0]
+		return { uci, cp }
+	})
+	// if previous turn was black (now it's white's turn), best moves are the highest cp
+	if (lastColor === 'b') {
+		nextMoveCps.reverse()
+	}
+	return nextMoveCps
+}
+
+/**
+ * Some considerations. Lichess says to make only one api call at a time.
+ * Also better to keep this somewhat syncronous so the moves are added in the right order.
+ * @param queryClient 
+ * @param game 
+ * @param db 
+ * @param maxDepth 
+ * @param variationsCount 
+ * @param playedPercent 
+ * @param bestMovesCount 
+ * @returns 
+ */
+async function buildPGN(
+	queryClient: QueryClient,
+	game: Chess,
+	analysis: AnalysisData,
+	db: DB,
+	maxDepth: number,
+	variationsCount: number,
+	playedPercent: number,
+	bestMovesCount: number,
+	myMoveMethod: string
+): Promise<string | null> {
+	let cancelled = false
+	async function addMoves(lastMove: Move, depth: number): Promise<void> {
+		if (cancelled || depth > maxDepth) return
+
+		const explorerDataPromise = queryClient.fetchQuery<ExplorerData, Error, ExplorerData, ExplorerQueryKey>({ queryKey: ['explorer', db, lastMove.fen], queryFn: explorerQueryFn })
+		const analysisDataPromise = queryClient.fetchQuery<AnalysisData, Error, AnalysisData, AnalysisQueryKey>({ queryKey: ['analysis', lastMove.fen], queryFn: analysisQueryFn })
+		let explorerData: ExplorerData, analysisData: AnalysisData
+		try {
+			explorerData = await explorerDataPromise
+			analysisData = await analysisDataPromise
+		} catch (error) {
+			cancelled = true
+			return
 		}
+		// return here in case an error happened in another call while awaiting
+		if (cancelled) return
 		
-		const lastMove = game.lastMove() ?? undefined //game.history().length ? game.history()[game.history().length - 1] : undefined
+		const nextMoveCps = getNextMoveCps(analysisData, lastMove.color)
+		const uciToCp = nextMoveCps.reduce((map, { uci, cp }) => {
+			map[uci] = cp
+			return map
+		}, {} as { [uci: string]: number })
+
+		// if the last move wasn't me, then it's my turn
+		// So just do the best move (or if not available, most common)
+		if (lastMove.color !== myColor) {
+			let uci: string, cp: number | undefined
+			if (myMoveMethod === 'best' && nextMoveCps.length) {
+				({ uci, cp } = nextMoveCps[0])
+			}
+			else {
+				({ uci } = explorerData.moves[0])
+				cp = uciToCp[uci]
+			}
+			const addedMove = game.move(uciToMove(uci), lastMove)
+			if (cp !== undefined) {
+				addedMove!.commentMove = `[%ce ${cp}][%eval ${(cp / 100).toFixed(2)}]`
+				addedMove!.nag = diffToNag(getCpDiff(lastMove, cp))
+			}
+			return await addMoves(addedMove!, depth + 1)
+		}
+
 		const totalGames = explorerData.white + explorerData.draws + explorerData.black
 		const commonMovesPlayedEnough = explorerData.moves.slice(0, variationsCount).filter(move => {
 			const moveTotalGames = move.white + move.draws + move.black
 			const movePlayedPercent = moveTotalGames / totalGames * 100
 			return movePlayedPercent >= playedPercent
 		})
-		commonMovesPlayedEnough.forEach(({ uci }) => {
-			game.move(uciToMove(uci), lastMove)
+		const bestMovesNotInPlayedMoves = nextMoveCps.slice(0, bestMovesCount).filter(({ uci }) => {
+			return commonMovesPlayedEnough.findIndex(({ uci: playedUci }) => playedUci === uci) === -1
 		})
-		nextMoveEvals.forEach(({ uci, cp }) => {
-			// if we haven't added this move
-			if (lastMove?.variations.findIndex(([move]) => move.uci === uci) !== -1) {
-				game.move(uciToMove(uci), lastMove)
-			}
-		})
-		return
-		//addMoves(game.fen(), db, depth + 1)
+		const nextMoveUcis = commonMovesPlayedEnough.map(m => m.uci).concat(bestMovesNotInPlayedMoves.map(m => m.uci))
 
+		for (const uci of nextMoveUcis) {
+			const move = uciToMove(uci)
+			const addedMove = game.move(move, lastMove)
+			let comment: string | undefined, nag: string | undefined
+			let cp = uciToCp[uci]
+			if (cp === undefined) {
+				// see if we can look up this position directly
+				const analysisData = await queryClient.fetchQuery<AnalysisData, Error, AnalysisData, AnalysisQueryKey>({ queryKey: ['analysis', addedMove!.fen], queryFn: analysisQueryFn })
+				if (!('error' in analysisData) && analysisData.pvs.length) {
+					const nextMoveCps = getNextMoveCps(analysisData, lastMove.color)
+					cp = nextMoveCps[0].cp
+				}
+			}
+			if (cp !== undefined) {
+				comment = `[%ce ${cp}][%eval ${(cp / 100).toFixed(2)}]`
+				const cpDiff = getCpDiff(lastMove, cp)
+				nag = diffToNag(cpDiff)
+			}
+			// we have evaluations, but this move wasn't in it.
+			else if (nextMoveCps.length) {
+				const cpEstimate = nextMoveCps[nextMoveCps.length - 1].cp
+				const cpDiff = getCpDiff(lastMove, cpEstimate)
+				nag = diffToNag(cpDiff)
+			}
+			addedMove!.commentMove = comment
+			addedMove!.nag = nag
+			await addMoves(addedMove!, depth + 1)
+		}
 	}
 
-	addMoves(game.fen(), db, 0)
+	const lastMove = game.lastMove()
+	if (!lastMove) return null
+	// I made the last move
+	const myColor = lastMove.color
+	if (!('error' in analysis) && analysis.pvs.length) {
+		const nextMoveCps = getNextMoveCps(analysis, lastMove.color)
+		const cp = nextMoveCps[0].cp
+		lastMove.commentMove = `[%ce ${cp}][%eval ${(cp / 100).toFixed(2)}]`
+	}
+	await addMoves(lastMove, 0)
 
-	return game.pgn.render()
+	const pgn = game.pgn.render()
+	// nags are before moves???
+	return pgn.replace(/(?<!\{[^}]*?)(\$\d+)(\s+)(\w+)/g, '$3$2$1')
 	
 }
 
@@ -189,12 +301,14 @@ function Study() {
 	const [, undoMove] = useAtom(undoMoveAtom)
 	const [fen] = useAtom(fenAtom)
 	const [{data: analysis, isPending}] = useAtom(analysisAtom)
-	const [nextMoveEvals] = useAtom(nextMoveEvalsAtom)
-	const [commonMovesCount, setCommonMovesCount] = useState(2);
-	const [playedPercent, setPlayedPercent] = useState(25);
-	const [bestMovesCount, setBestMovesCount] = useState(1);
+	const [nextMoveCps] = useAtom(nextMoveCpsAtom)
+	const [commonMovesCount, setCommonMovesCount] = useState(5);
+	const [playedPercent, setPlayedPercent] = useState(10);
+	const [bestMovesCount, setBestMovesCount] = useState(2);
 	const [depth, setDepth] = useState(5);
-	const [{game}] = useAtom(gameAtom);
+	const [myMoveMethod, setMyMoveMethod] = useState('best')
+	const [{game}, setGame] = useAtom(gameAtom);
+	const [pgn, setPgn] = useState<string>('');
 
 	const queryClient = useQueryClient();
 
@@ -220,10 +334,10 @@ function Study() {
 			</li>
 			{moves && moves.moves.map((move) => (
 				<li key={move.uci} className="my-2">
-					<button onClick={() => { console.log(move); addMove(move.san) }}
+					<button onClick={() => { addMove(move.san) }}
 					className="btn btn-sm btn-outline">
 						{move.san} {move.opening && `${move.opening.eco} ${move.opening.name}`} (W:{move.white} D:{move.draws} B:{move.black})
-						{move.uci in nextMoveEvals && ` Eval: ${nextMoveEvals[move.uci].toFixed(2)}`}
+						{move.uci in nextMoveCps && ` Eval: ${(nextMoveCps[move.uci] / 100).toFixed(2)}`}
 					</button>
 				</li>
 			))}
@@ -271,7 +385,9 @@ function Study() {
 			/> */}
 
 			<label className="label">Depth</label>
-			<input type="range" min={1} max="10" value={depth} className="range range-primary" onChange={e => setDepth(Number(e.target.value))} />
+			<div className="tooltip tooltip-bottom" data-tip={`${depth}`}>
+				<input type="range" min={1} max={9} step={2} value={depth} className="range range-primary" onChange={e => setDepth(Number(e.target.value))} />
+			</div>
 		</fieldset>
 
 
@@ -293,13 +409,19 @@ function Study() {
 
 		<fieldset className="fieldset w-full max-w-xs mx-auto">
 			<legend className="fieldset-legend">My Move</legend>
-			<select className="select select-primary">
-				<option value="">Best Move</option>
-				<option value="">Most Common Move</option>
+			<select value={myMoveMethod} onChange={e => setMyMoveMethod(e.target.value)} className="select select-primary">
+				<option value="best">Best Move</option>
+				<option value="common">Most Common Move</option>
 			</select>
 		</fieldset>
 
-		<button onClick={() => buildPGN(queryClient, game, db, depth, commonMovesCount, playedPercent, bestMovesCount)}>Go</button>
+		<button onClick={async () => {
+			const pgn = await buildPGN(queryClient, game, analysis, db, depth, commonMovesCount, playedPercent, bestMovesCount, myMoveMethod)
+			if (pgn) setPgn(pgn)
+			setGame({ game })
+		}}>Go</button>
+
+		<textarea value={pgn} readOnly className="textarea" />
 	</>
 }
 

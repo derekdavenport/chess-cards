@@ -33,12 +33,13 @@ declare module 'cm-chess' {
 		ply: number
 		promotion?: Promotion
 		previous: Move | null
-		san: string
+		san: SAN
 		to: Square
 		uci: string
 		variation: Move[]
 		variations: Move[][]
 	}
+	type AddMove = Pick<Move, 'from' | 'to' | 'promotion'> | SAN
 
 	type FEN = {
 		empty: '8/8/8/8/8/8/8/8 w - - 0 1',
@@ -160,7 +161,7 @@ declare module 'cm-chess' {
 		 * @param sloppy to allow sloppy SAN
 		 * @returns {{}|null}
 		 */
-		move(move: Pick<Move, 'from' | 'to' | 'promotion'> | SAN, previousMove?: Move, sloppy?: boolean): Move | null;
+		move(moveOrSan: AddMove, previousMove?: Move, sloppy?: boolean): Move | null;
 		/**
 		 * Return all valid moves
 		 * @param options {{ square: "e2", piece: "n", verbose: true }}
