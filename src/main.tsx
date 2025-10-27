@@ -7,9 +7,9 @@ import { ReactQueryDevtools } from '@tanstack/react-query-devtools'
 import { Provider } from 'jotai/react'
 import { useHydrateAtoms } from 'jotai/react/utils'
 import { queryClientAtom } from 'jotai-tanstack-query'
-import App from './App.tsx'
+import { createRouter, RouterProvider } from '@tanstack/react-router'
+import { routeTree } from './routeTree.gen'
 import './index.css'
-import Study from './Study.tsx'
 
 const queryClient = new QueryClient({
 	defaultOptions: {
@@ -29,13 +29,25 @@ const HydrateAtoms = ({ children }: {children: ReactNode }) => {
 	return children
 }
 
+const router = createRouter({
+	routeTree,
+  defaultPreload: 'intent',
+  scrollRestoration: true,
+})
+
+declare module '@tanstack/react-router' {
+  interface Register {
+    // This infers the type of our router and registers it across your entire project
+    router: typeof router
+  }
+}
+
 ReactDOM.createRoot(document.getElementById('root')!).render(
 	<React.StrictMode>
 		<PersistQueryClientProvider client={queryClient} persistOptions={{ persister }}>
 			<Provider>
 				<HydrateAtoms>
-					<Study />
-					<App />
+					<RouterProvider router={router} />
 				</HydrateAtoms>
 			</Provider>
 			<ReactQueryDevtools initialIsOpen={false} />

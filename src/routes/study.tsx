@@ -3,6 +3,11 @@ import { atomWithQuery } from "jotai-tanstack-query"
 import { Chess, FEN, Event, Square, Move, Promotion, Color } from "cm-chess";
 import { useState } from "react";
 import { QueryClient, useQueryClient } from "@tanstack/react-query";
+import { createFileRoute } from "@tanstack/react-router";
+
+export const Route = createFileRoute('/study')({
+  component: Study,
+})
 
 interface PositionStats {
 	white: number,
@@ -205,6 +210,7 @@ async function buildPGN(
 			analysisData = await analysisDataPromise
 		} catch (error) {
 			cancelled = true
+			// if 429 need to wait 1 minute before resuming
 			return
 		}
 		// return here in case an error happened in another call while awaiting
@@ -360,8 +366,8 @@ function Study() {
 				className="input validator"
 				required
 				placeholder="Type a number between 1 to 10"
-				min="0"
-				max="10"
+				min='0'
+				max='10'
 				title="Must be between be 0 to 10"
 				value={commonMovesCount}
 				onChange={e => setCommonMovesCount(Number(e.target.value))}
@@ -377,8 +383,8 @@ function Study() {
 				className="input validator"
 				required
 				placeholder="Type a number between 0 to 50"
-				min="0"
-				max="50"
+				min='0'
+				max='50'
 				title="Must be between be 0 to 50"
 				value={playedPercent}
 				onChange={e => setPlayedPercent(Number(e.target.value))}
@@ -398,8 +404,8 @@ function Study() {
 				className="input validator"
 				required
 				placeholder="Type a number between 1 to 10"
-				min="0"
-				max="5"
+				min='0'
+				max='5'
 				title="Must be between be 0 to 5"
 				value={bestMovesCount}
 				onChange={e => setBestMovesCount(Number(e.target.value))}
@@ -416,6 +422,7 @@ function Study() {
 		</fieldset>
 
 		<button onClick={async () => {
+			if (!analysis) return
 			const pgn = await buildPGN(queryClient, game, analysis, db, depth, commonMovesCount, playedPercent, bestMovesCount, myMoveMethod)
 			if (pgn) setPgn(pgn)
 			setGame({ game })
@@ -424,5 +431,3 @@ function Study() {
 		<textarea value={pgn} readOnly className="textarea" />
 	</>
 }
-
-export default Study

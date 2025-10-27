@@ -1,5 +1,10 @@
 import { useRef, useState } from 'react'
-import './App.css'
+import './index.css'
+import { createFileRoute } from '@tanstack/react-router'
+
+export const Route = createFileRoute('/')({
+  component: App,
+})
 
 const lichessStudyUrlRegExpString = '((https?://)?lichess.org/study/)?(\\w{8})((/\\w{8})?/?)?'
 const lichessStudyUrlRegExp = new RegExp('^' + lichessStudyUrlRegExpString + '$')
@@ -50,11 +55,6 @@ function App() {
 	const studyInputRef = useRef<HTMLInputElement | null>(null)
 	const downloadLinkRef = useRef<HTMLAnchorElement | null>(null)
 	return <>
-		<main className="container text-center m-auto">
-			<header className="prose m-auto">
-				<h1 className="my-10"><img src="/chess-cards.png" className="inline max-h-20 m-0 rounded-lg" /> Chess Cards</h1>
-			</header>
-
 			<div className="flex items-center space-x-4 max-w-screen-md m-auto">
 				<div>
 					From Lichess Study
@@ -80,7 +80,7 @@ function App() {
 					<legend className="fieldset-legend">Lichess Study Address</legend>
 					<input
 						id="lichessStudyUrl" name="lichessStudyUrl"
-						type="text"
+						type='text'
 						className="input input-primary"
 						placeholder="https://lichess.org/study/whCVdUeM"
 						pattern={lichessStudyUrlRegExpString}
@@ -124,9 +124,6 @@ function App() {
 					</ul>
 				</div>
 			</div>
-		</main >
 		<a download ref={downloadLinkRef}></a>
 	</>
 }
-
-export default App
