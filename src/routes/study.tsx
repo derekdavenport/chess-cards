@@ -1,9 +1,11 @@
 import { atom, ExtractAtomValue, useAtom } from "jotai"
 import { atomWithQuery } from "jotai-tanstack-query"
 import { Chess, FEN, Event, Square, Move, Promotion, Color } from "cm-chess";
-import { useState } from "react";
-import { QueryClient, useQueryClient } from "@tanstack/react-query";
+import { useContext, useState } from "react";
+import { QueryClient, QueryFunction, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
+import { AuthContext, IAuthContext } from "react-oauth2-code-pkce";
+import { tokenAtom } from "../auth";
 
 export const Route = createFileRoute('/study')({
   component: Study,
@@ -89,6 +91,36 @@ const analysisAtom = atomWithQuery<AnalysisData, Error, AnalysisData, AnalysisQu
 	queryKey: ['analysis', get(fenAtom)],
 	queryFn: analysisQueryFn,
 	staleTime: Infinity,
+}))
+
+// https://lichess.org/api/account
+
+const usernameAtom = atom('heyf00L')
+type ListStudiesQueryKey = ['study', ExtractAtomValue<typeof usernameAtom>, ExtractAtomValue<typeof tokenAtom>]
+type StudiesList = {
+    id: string,
+    name: string,
+    createdAt: number,
+    updatedAt: number,
+}[]
+const listStudiesQueryFn: QueryFunction<StudiesList, ListStudiesQueryKey> = async ({ queryKey: [, username, token] }) => {
+	const res = await fetch(`https://lichess.org/api/study/by/${username}`, {
+		headers: {
+			'Authorization': `Bearer ${token}`,
+		},
+	})
+	const body = await res.text()
+	const studies: StudiesList = []
+	const lines = body.split('\n')
+	for (const line of lines) {
+		if (line) studies.push(JSON.parse(line))
+	}
+	return studies
+}
+const studiesListAtom = atomWithQuery<StudiesList, Error, StudiesList, ListStudiesQueryKey>(get => ({
+	queryKey: ['study', get(usernameAtom), get(tokenAtom)],
+	queryFn: listStudiesQueryFn,
+	staleTime: 1000 * 60 * 1,
 }))
 
 const nextMoveCpsAtom = atom<{ [uci: string]: number }>((get) => {
@@ -308,17 +340,22 @@ function Study() {
 	const [fen] = useAtom(fenAtom)
 	const [{data: analysis, isPending}] = useAtom(analysisAtom)
 	const [nextMoveCps] = useAtom(nextMoveCpsAtom)
-	const [commonMovesCount, setCommonMovesCount] = useState(5);
-	const [playedPercent, setPlayedPercent] = useState(10);
-	const [bestMovesCount, setBestMovesCount] = useState(2);
-	const [depth, setDepth] = useState(5);
+	const [commonMovesCount, setCommonMovesCount] = useState(5)
+	const [playedPercent, setPlayedPercent] = useState(10)
+	const [bestMovesCount, setBestMovesCount] = useState(2)
+	const [depth, setDepth] = useState(5)
 	const [myMoveMethod, setMyMoveMethod] = useState('best')
-	const [{game}, setGame] = useAtom(gameAtom);
-	const [pgn, setPgn] = useState<string>('');
-
+	const [{game}, setGame] = useAtom(gameAtom)
+	const [pgn, setPgn] = useState<string>('')
+	const { tokenData, token, logIn, logOut, idToken, error }: IAuthContext = useContext(AuthContext)
+	const [{data: studiesList}] = useAtom(studiesListAtom)
 	const queryClient = useQueryClient();
+	console.log('studiesList', studiesList)
 
 	return <>
+	<p>{studiesList && studiesList.map(study => {
+		return <div key={study.id}>{study.name}</div>
+	})}</p>
 	{fen}<br />
 
 
