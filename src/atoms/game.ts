@@ -12,3 +12,6 @@ export const undoMoveAtom = atom(null, (get, set) => {
 	game.undo()
 	set(gameAtom, { game })
 })
+
+// export const turnAtom = atom(get => get(gameAtom).game.turn() === 'w' ? 'white' : 'black')
+// export const lastMove = atom(get => get(gameAtom).game.turn() === 'w' ? 'white' : 'black')

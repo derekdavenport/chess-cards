@@ -104,12 +104,20 @@ async function buildPGN(
 				({ uci } = explorerData.moves[0])
 				cp = uciToCp[uci]
 			}
-			const addedMove = game.move(uciToMove(uci), lastMove)
-			if (cp !== undefined) {
-				addedMove!.commentMove = `[%ce ${cp}][%eval ${(cp / 100).toFixed(2)}]`
-				addedMove!.nag = diffToNag(getCpDiff(lastMove, cp))
+			const move = uciToMove(uci)
+			// castles is wrong
+			if (game.piece(move.from)?.type == 'k' && move.from == 'e1' || move.from == 'e8') {
+				move.to = { a1: 'c1', h1: 'g1', a8: 'c8', h8: 'g8' }[move.to]
 			}
-			return await addMoves(addedMove!, depth + 1)
+			const addedMove = game.move(move, lastMove)
+			if (addedMove === null) {
+				throw new Error(uci + ' was not a legal move at ' + game.fen())
+			}
+			if (cp !== undefined) {
+				addedMove.commentMove = `[%ce ${cp}][%eval ${(cp / 100).toFixed(2)}]`
+				addedMove.nag = diffToNag(getCpDiff(lastMove, cp))
+			}
+			return await addMoves(addedMove, depth + 1)
 		}
 
 		const totalGames = explorerData.white + explorerData.draws + explorerData.black
@@ -126,6 +134,9 @@ async function buildPGN(
 		for (const uci of nextMoveUcis) {
 			const move = uciToMove(uci)
 			const addedMove = game.move(move, lastMove)
+			if (addedMove === null) {
+				throw new Error(uci + ' was not a legal move at ' + game.fen())
+			}
 			let comment: string | undefined, nag: string | undefined
 			let cp = uciToCp[uci]
 			if (cp === undefined) {
@@ -147,9 +158,9 @@ async function buildPGN(
 				const cpDiff = getCpDiff(lastMove, cpEstimate)
 				nag = diffToNag(cpDiff)
 			}
-			addedMove!.commentMove = comment
-			addedMove!.nag = nag
-			await addMoves(addedMove!, depth + 1)
+			addedMove.commentMove = comment
+			addedMove.nag = nag
+			await addMoves(addedMove, depth + 1)
 		}
 	}
 
@@ -162,6 +173,9 @@ async function buildPGN(
 		const cp = nextMoveCps[0].cp
 		lastMove.commentMove = `[%ce ${cp}][%eval ${(cp / 100).toFixed(2)}]`
 	}
+	// [ECO "A40"]
+	// [Opening "Englund Gambit: Main Line"]
+	// [StudyName "Englund"]
 	await addMoves(lastMove, 0)
 
 	const pgn = game.pgn.render()

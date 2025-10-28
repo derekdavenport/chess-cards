@@ -46,7 +46,13 @@ declare module '@tanstack/react-router' {
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
 	<React.StrictMode>
-		<PersistQueryClientProvider client={queryClient} persistOptions={{ persister }}>
+		<PersistQueryClientProvider client={queryClient} persistOptions={{ persister }}
+		// not sure if I need this, if I get No mutationFn found error (also add default mutation Fn)
+		// onSuccess={() => {
+		// 	// resume mutations after initial restore from localStorage was successful
+		// 	queryClient.resumePausedMutations()
+		// }}
+		>
 			<Provider>
 				<HydrateAtoms>
 					<AuthProvider authConfig={authConfig}>

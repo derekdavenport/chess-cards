@@ -2,8 +2,9 @@ import { useContext, useEffect } from 'react'
 import { Link, Outlet, createRootRoute } from '@tanstack/react-router'
 import { TanStackRouterDevtools } from '@tanstack/react-router-devtools'
 import { AuthContext, IAuthContext } from "react-oauth2-code-pkce"
-import { useSetAtom } from 'jotai'
+import { useAtom, useSetAtom } from 'jotai'
 import { tokenAtom } from '../auth'
+import { usernameAtom } from '../atoms/account'
 
 
 export const Route = createRootRoute({
@@ -14,6 +15,7 @@ export const Route = createRootRoute({
 function RootComponent() {
 	const { tokenData, token, logIn, logOut, idToken, error }: IAuthContext = useContext(AuthContext)
 	const setToken = useSetAtom(tokenAtom)
+	const [username] = useAtom(usernameAtom)
 	console.log(tokenData, token, logIn, logOut, idToken, error)
 	useEffect(() => {
 		setToken(token)
@@ -43,7 +45,7 @@ function RootComponent() {
 					Create Study
 				</Link>
 				{' '}
-				{token ? <button onClick={() => logOut()}>Log Out</button> : <button onClick={() => logIn()}>Log In</button>}
+				{token ? <button onClick={() => logOut()}>{username} Log Out</button> : <button onClick={() => logIn()}>Log In</button>}
 			</nav>
 			<Outlet />
 		</main >

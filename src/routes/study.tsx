@@ -5,7 +5,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { addMoveAtom, dbAtom, movesAtom, nextMoveCpsAtom } from "../atoms/explorer";
 import { analysisAtom } from "../atoms/analysis";
 import { uciListAtom, undoMoveAtom, fenAtom, gameAtom } from "../atoms/game";
-import { studiesListAtom } from "../atoms/study";
+import { createStudyAtom, importPGNintoStudyAtom, studiesListAtom, studyIdAtom } from "../atoms/study";
 import { buildPGN } from "../util/game";
 import { Db } from "../types/explorer";
 
@@ -29,7 +29,9 @@ function Study() {
 	const [myMoveMethod, setMyMoveMethod] = useState('best')
 	const [{game}, setGame] = useAtom(gameAtom)
 	const [pgn, setPgn] = useState<string>('')
+	const [studyId, setStudyId] = useAtom(studyIdAtom)
 	const [{data: studiesList}] = useAtom(studiesListAtom)
+	const [{ mutate: importPGNintoStudy, data: newStudyChapters, status }] = useAtom(importPGNintoStudyAtom)
 	const queryClient = useQueryClient();
 	console.log('studiesList', studiesList)
 
@@ -139,11 +141,25 @@ function Study() {
 			</select>
 		</fieldset>
 
+		<fieldset className="fieldset w-full max-w-xs mx-auto">
+			<legend className="fieldset-legend">Study</legend>
+			<select value={studyId} onChange={e => setStudyId(e.target.value)} className="select select-primary">
+				{studiesList ? studiesList.map(study => {
+					return <option key={study.id} value={study.id}>{study.name}</option>
+				}) : <option>loading...</option>}
+			</select>
+			<p className="">Can only import into a study. You may <a href="https://lichess.org/study">create a new study on lichess</a>.</p>
+		</fieldset>
+
 		<button onClick={async () => {
 			if (!analysis) return
+			const orientation = game.lastMove()!.color === 'w' ? 'white' : 'black'
 			const pgn = await buildPGN(queryClient, game, analysis, db, depth, commonMovesCount, playedPercent, bestMovesCount, myMoveMethod)
-			if (pgn) setPgn(pgn)
-			setGame({ game })
+			if (pgn) {
+				setPgn(pgn)
+				setGame({ game })
+				importPGNintoStudy({ pgn, orientation })
+			}
 		}}>Go</button>
 
 		<textarea value={pgn} readOnly className="textarea" />
