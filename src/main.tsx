@@ -9,9 +9,9 @@ import { useHydrateAtoms } from 'jotai/react/utils'
 import { queryClientAtom } from 'jotai-tanstack-query'
 import { createRouter, RouterProvider } from '@tanstack/react-router'
 import { routeTree } from './routeTree.gen'
-import { AuthProvider, TAuthConfig, TRefreshTokenExpiredEvent } from "react-oauth2-code-pkce"
+import { AuthProvider } from "react-oauth2-code-pkce"
+import { authConfig } from './auth'
 import './index.css'
-import { atom } from 'jotai'
 
 const queryClient = new QueryClient({
 	defaultOptions: {
@@ -42,22 +42,6 @@ declare module '@tanstack/react-router' {
 		// This infers the type of our router and registers it across your entire project
 		router: typeof router
 	}
-}
-
-const tokenAtom = atom('')
-const authConfig: TAuthConfig = {
-	clientId: 'chess.context.cards',
-	authorizationEndpoint: 'https://lichess.org/oauth',
-	tokenEndpoint: 'https://lichess.org/api/token',
-	redirectUri: 'http://localhost:5173',
-	scope: 'study:read study:write',
-	state: 'nothing',
-	autoLogin: false,
-	decodeToken: false,
-	postLogin: () => {
-		tokenAtom
-	},
-	onRefreshTokenExpire: (event: TRefreshTokenExpiredEvent) => event.logIn(undefined, undefined, "popup"), // 'redirect' | 'replace' | 'popup'
 }
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
