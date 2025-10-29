@@ -1,15 +1,32 @@
-import { Chess, Color, Move, Promotion, Square } from "cm-chess"
+import { AddMove, Chess, Color, Move, Promotion, Square } from "cm-chess"
+import { Fen } from 'cm-chess/src/Fen.js'
 import { AnalysisData } from "../types/analysis"
 import { analysisQueryFn, AnalysisQueryKey } from "../queries/analysis"
-import { Db, ExplorerData } from "../types/explorer"
+import { Db, ExplorerData, LiMove } from "../types/explorer"
 import { explorerQueryFn, ExplorerQueryKey } from "../queries/explorer"
 import { QueryClient } from "@tanstack/react-query"
 
-function uciToMove(uci: string) {
-	return { from: uci.slice(0, 2) as Square, to: uci.slice(2, 4) as Square, promotion: uci.length > 4 ? uci[4] as Promotion : undefined }
+function uciToMove(uci: string, game: Chess, lastMove: Move): AddMove {
+	const move: AddMove = { from: uci.slice(0, 2) as Square, to: uci.slice(2, 4) as Square, promotion: uci.length > 4 ? uci[4] as Promotion : undefined }
+	// cm-chess wants king to move 2 squares for castles, but lichess shows it moving to corner
+	if (game.piece(move.from, lastMove)?.type == 'k') {
+		if (uci == 'e1a1') {
+			move.to = 'c1'
+		}
+		else if (uci == 'e1h1') {
+			move.to = 'g1'
+		}
+		else if (uci == 'e8a8') {
+			move.to = 'c8'
+		}
+		else if (uci == 'e8h8') {
+			move.to = 'g8'
+		}
+	}
+	return move
 }
 
-function getMoveCp({ commentMove }: Move): number | undefined {
+function getCpFromMoveComment({ commentMove }: Move): number | undefined {
 	if (!commentMove) return
 	const ceMatch = commentMove.match(/\[%ce (\d+)\]/)
 	if (!ceMatch) return
@@ -17,7 +34,7 @@ function getMoveCp({ commentMove }: Move): number | undefined {
 }
 
 function getCpDiff(move: Move, cp: number): number | undefined {
-	const moveCp = getMoveCp(move)
+	const moveCp = getCpFromMoveComment(move)
 	if (moveCp === undefined) return
 	return move.color == 'w' ? cp - moveCp : moveCp - cp
 }
@@ -32,14 +49,15 @@ function diffToNag(cpDiff: number | undefined): string | undefined {
 	}
 }
 
-function getNextMoveCps(analysisData: AnalysisData, lastColor: Color) {
+function getMoveCps(analysisData: AnalysisData) {
 	if ('error' in analysisData) return []
 	const nextMoveCps = analysisData.pvs.sort((a, b) => a.cp - b.cp).map(({ moves, cp }) => {
 		const uci = moves.split(' ')[0]
 		return { uci, cp }
 	})
-	// if previous turn was black (now it's white's turn), best moves are the highest cp
-	if (lastColor === 'b') {
+	// if white to play, best moves are the highest cp
+	const fen = new Fen(analysisData.fen)
+	if (fen.colorToPlay === 'w') {
 		nextMoveCps.reverse()
 	}
 	return nextMoveCps
@@ -87,79 +105,66 @@ async function buildPGN(
 		// return here in case an error happened in another call while awaiting
 		if (cancelled) return
 
-		const nextMoveCps = getNextMoveCps(analysisData, lastMove.color)
-		const uciToCp = nextMoveCps.reduce((map, { uci, cp }) => {
-			map[uci] = cp
-			return map
-		}, {} as { [uci: string]: number })
+		const nextMoveCps = getMoveCps(analysisData)
 
 		// if the last move wasn't me, then it's my turn
 		// So just do the best move (or if not available, most common)
+		// if (lastMove.color !== myColor) {
+		// 	let uci: string, cp: number | undefined
+		// 	if (myMoveMethod === 'best' && nextMoveCps.length) {
+		// 		({ uci, cp } = nextMoveCps[0])
+		// 	}
+		// 	else {
+		// 		({ uci } = explorerData.moves[0])
+		// 		cp = uciToCp[uci]
+		// 	}
+		// 	const move = uciToMove(uci, game, lastMove)
+
+		// 	const addedMove = game.move(move, lastMove)
+		// 	if (addedMove === null) {
+		// 		throw new Error(uci + ' was not a legal move at ' + game.fen())
+		// 	}
+		// 	tagMove(cp, addedMove, lastMove)
+		// 	return await addMoves(addedMove, depth + 1)
+		// }
+
+		let nextMoveUcis: string[]
+		// my turn
 		if (lastMove.color !== myColor) {
-			let uci: string, cp: number | undefined
+			let uci: string
 			if (myMoveMethod === 'best' && nextMoveCps.length) {
-				({ uci, cp } = nextMoveCps[0])
+				({ uci } = nextMoveCps[0])
 			}
 			else {
 				({ uci } = explorerData.moves[0])
-				cp = uciToCp[uci]
 			}
-			const move = uciToMove(uci)
-			// castles is wrong
-			if (game.piece(move.from)?.type == 'k' && move.from == 'e1' || move.from == 'e8') {
-				move.to = { a1: 'c1', h1: 'g1', a8: 'c8', h8: 'g8' }[move.to]
-			}
-			const addedMove = game.move(move, lastMove)
-			if (addedMove === null) {
-				throw new Error(uci + ' was not a legal move at ' + game.fen())
-			}
-			if (cp !== undefined) {
-				addedMove.commentMove = `[%ce ${cp}][%eval ${(cp / 100).toFixed(2)}]`
-				addedMove.nag = diffToNag(getCpDiff(lastMove, cp))
-			}
-			return await addMoves(addedMove, depth + 1)
+			nextMoveUcis = [uci]
+		}
+		// their turn
+		else {
+			const commonMovesPlayedEnough = getCommonMovesPlayedEnough(explorerData, variationsCount, playedPercent)
+			const bestMovesNotInPlayedMoves = getBestMovesNotInPlayedMoves(nextMoveCps, bestMovesCount, commonMovesPlayedEnough)
+			nextMoveUcis = commonMovesPlayedEnough.map(m => m.uci).concat(bestMovesNotInPlayedMoves.map(m => m.uci))
 		}
 
-		const totalGames = explorerData.white + explorerData.draws + explorerData.black
-		const commonMovesPlayedEnough = explorerData.moves.slice(0, variationsCount).filter(move => {
-			const moveTotalGames = move.white + move.draws + move.black
-			const movePlayedPercent = moveTotalGames / totalGames * 100
-			return movePlayedPercent >= playedPercent
-		})
-		const bestMovesNotInPlayedMoves = nextMoveCps.slice(0, bestMovesCount).filter(({ uci }) => {
-			return commonMovesPlayedEnough.findIndex(({ uci: playedUci }) => playedUci === uci) === -1
-		})
-		const nextMoveUcis = commonMovesPlayedEnough.map(m => m.uci).concat(bestMovesNotInPlayedMoves.map(m => m.uci))
-
+		const uciToCp = getUciToCpMap(nextMoveCps)
 		for (const uci of nextMoveUcis) {
-			const move = uciToMove(uci)
-			const addedMove = game.move(move, lastMove)
+			const addedMove = game.move(uciToMove(uci, game, lastMove), lastMove)
 			if (addedMove === null) {
 				throw new Error(uci + ' was not a legal move at ' + game.fen())
 			}
-			let comment: string | undefined, nag: string | undefined
-			let cp = uciToCp[uci]
+			let cp: number | undefined = uciToCp[uci]
 			if (cp === undefined) {
-				// see if we can look up this position directly
-				const analysisData = await queryClient.fetchQuery<AnalysisData, Error, AnalysisData, AnalysisQueryKey>({ queryKey: ['analysis', addedMove!.fen], queryFn: analysisQueryFn })
-				if (!('error' in analysisData) && analysisData.pvs.length) {
-					const nextMoveCps = getNextMoveCps(analysisData, lastMove.color)
-					cp = nextMoveCps[0].cp
-				}
-			}
-			if (cp !== undefined) {
-				comment = `[%ce ${cp}][%eval ${(cp / 100).toFixed(2)}]`
-				const cpDiff = getCpDiff(lastMove, cp)
-				nag = diffToNag(cpDiff)
+				cp = await fetchMoveCp(queryClient, addedMove)
 			}
 			// we have evaluations, but this move wasn't in it.
-			else if (nextMoveCps.length) {
-				const cpEstimate = nextMoveCps[nextMoveCps.length - 1].cp
-				const cpDiff = getCpDiff(lastMove, cpEstimate)
-				nag = diffToNag(cpDiff)
-			}
-			addedMove.commentMove = comment
-			addedMove.nag = nag
+			// else if (nextMoveCps.length) {
+			// 	const cpEstimate = nextMoveCps[nextMoveCps.length - 1].cp
+			// 	const cpDiff = getCpDiff(lastMove, cpEstimate)
+			// 	nag = diffToNag(cpDiff)
+			// }
+			tagMove(cp, addedMove, lastMove)
+
 			await addMoves(addedMove, depth + 1)
 		}
 	}
@@ -169,7 +174,7 @@ async function buildPGN(
 	// I made the last move
 	const myColor = lastMove.color
 	if (!('error' in analysis) && analysis.pvs.length) {
-		const nextMoveCps = getNextMoveCps(analysis, lastMove.color)
+		const nextMoveCps = getMoveCps(analysis)
 		const cp = nextMoveCps[0].cp
 		lastMove.commentMove = `[%ce ${cp}][%eval ${(cp / 100).toFixed(2)}]`
 	}
@@ -184,4 +189,40 @@ async function buildPGN(
 
 }
 
-export { uciToMove, getMoveCp, getCpDiff, diffToNag, getNextMoveCps, buildPGN }
+export { uciToMove, getCpFromMoveComment as getMoveCp, getCpDiff, diffToNag, getMoveCps as getNextMoveCps, buildPGN }
+
+function tagMove(cp: number | undefined, addedMove: Move, lastMove: Move) {
+	if (cp === undefined) return
+	addedMove.commentMove = `[%ce ${cp}][%eval ${(cp / 100).toFixed(2)}]`
+	addedMove.nag = diffToNag(getCpDiff(lastMove, cp))
+}
+
+function getUciToCpMap(nextMoveCps: { uci: string; cp: number }[]) {
+	return nextMoveCps.reduce((map, { uci, cp }) => {
+		map[uci] = cp
+		return map
+	}, {} as { [uci: string]: number} )
+}
+
+async function fetchMoveCp(queryClient: QueryClient, addedMove: Move): Promise<number | undefined> {
+	const analysisData = await queryClient.fetchQuery<AnalysisData, Error, AnalysisData, AnalysisQueryKey>({ queryKey: ['analysis', addedMove.fen], queryFn: analysisQueryFn })
+	if (!('error' in analysisData) && analysisData.pvs.length) {
+		const nextMoveCps = getMoveCps(analysisData)
+		return nextMoveCps[0].cp
+	}
+}
+
+function getBestMovesNotInPlayedMoves(nextMoveCps: { uci: string; cp: number }[], bestMovesCount: number, commonMovesPlayedEnough: LiMove[]) {
+	return nextMoveCps.slice(0, bestMovesCount).filter(({ uci }) => {
+		return commonMovesPlayedEnough.findIndex(({ uci: playedUci }) => playedUci === uci) === -1
+	})
+}
+
+function getCommonMovesPlayedEnough(explorerData: ExplorerData, variationsCount: number, playedPercent: number) {
+	const totalGames = explorerData.white + explorerData.draws + explorerData.black
+	return explorerData.moves.slice(0, variationsCount).filter(move => {
+		const moveTotalGames = move.white + move.draws + move.black
+		const movePlayedPercent = moveTotalGames / totalGames * 100
+		return movePlayedPercent >= playedPercent
+	})
+}

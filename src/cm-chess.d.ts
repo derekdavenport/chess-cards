@@ -231,4 +231,17 @@ declare module 'cm-chess' {
 		fenOfPly(plyNumber: number): string;
 		addObserver(callback: (event: Event) => void): void;
 	}
+
+}
+
+declare module 'cm-chess/src/Fen.js' {
+	class Fen {
+		constructor(fen: string)
+		position: any
+		colorToPlay: Color
+		castling: any
+		enPassantTargetSquare: Square // really [a-h][36]
+		plyClock: number
+		moveNumber: number
+	}
 }
