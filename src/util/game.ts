@@ -107,27 +107,6 @@ async function buildPGN(
 
 		const nextMoveCps = getMoveCps(analysisData)
 
-		// if the last move wasn't me, then it's my turn
-		// So just do the best move (or if not available, most common)
-		// if (lastMove.color !== myColor) {
-		// 	let uci: string, cp: number | undefined
-		// 	if (myMoveMethod === 'best' && nextMoveCps.length) {
-		// 		({ uci, cp } = nextMoveCps[0])
-		// 	}
-		// 	else {
-		// 		({ uci } = explorerData.moves[0])
-		// 		cp = uciToCp[uci]
-		// 	}
-		// 	const move = uciToMove(uci, game, lastMove)
-
-		// 	const addedMove = game.move(move, lastMove)
-		// 	if (addedMove === null) {
-		// 		throw new Error(uci + ' was not a legal move at ' + game.fen())
-		// 	}
-		// 	tagMove(cp, addedMove, lastMove)
-		// 	return await addMoves(addedMove, depth + 1)
-		// }
-
 		let nextMoveUcis: string[]
 		// my turn
 		if (lastMove.color !== myColor) {
@@ -157,12 +136,7 @@ async function buildPGN(
 			if (cp === undefined) {
 				cp = await fetchMoveCp(queryClient, addedMove)
 			}
-			// we have evaluations, but this move wasn't in it.
-			// else if (nextMoveCps.length) {
-			// 	const cpEstimate = nextMoveCps[nextMoveCps.length - 1].cp
-			// 	const cpDiff = getCpDiff(lastMove, cpEstimate)
-			// 	nag = diffToNag(cpDiff)
-			// }
+			// estimate CP?
 			tagMove(cp, addedMove, lastMove)
 
 			await addMoves(addedMove, depth + 1)
