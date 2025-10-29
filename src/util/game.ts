@@ -114,8 +114,12 @@ async function buildPGN(
 			if (myMoveMethod === 'best' && nextMoveCps.length) {
 				({ uci } = nextMoveCps[0])
 			}
-			else {
+			else if (explorerData.moves.length) {
 				({ uci } = explorerData.moves[0])
+			}
+			else {
+				// didn't find any moves
+				return
 			}
 			nextMoveUcis = [uci]
 		}
@@ -159,7 +163,7 @@ async function buildPGN(
 
 	const pgn = game.pgn.render()
 	// nags are before moves???
-	return pgn.replace(/(?<!\{[^}]*?)(\$\d+)(\s+)(\w+)/g, '$3$2$1')
+	return pgn.replace(/(?<!\{[^}]*?)(\$\d+)(\s+)(\S+)/g, '$3$2$1')
 
 }
 
