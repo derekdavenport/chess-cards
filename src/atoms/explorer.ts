@@ -4,6 +4,7 @@ import { explorerQueryFn, ExplorerQueryKey } from "../queries/explorer";
 import { atom } from "jotai";
 import { fenAtom, gameAtom } from "./game";
 import { analysisAtom } from "./analysis";
+import { rateLimitAtom } from "./rateLimit";
 
 // Stash in object to make 'mutable'. Remember to set after any changes.
 
@@ -37,4 +38,5 @@ export const movesAtom = atomWithQuery<ExplorerData, Error, ExplorerData, Explor
 	queryKey: ['explorer', get(dbAtom), get(fenAtom)],
 	queryFn: explorerQueryFn,
 	staleTime: Infinity,
+	enabled: !get(rateLimitAtom).isRateLimited,
 }))

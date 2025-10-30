@@ -1,4 +1,4 @@
-import { AddMove, Chess, Color, Move, Promotion, Square } from "cm-chess"
+import { AddMove, Chess, Move, Promotion, Square } from "cm-chess"
 import { Fen } from 'cm-chess/src/Fen.js'
 import { AnalysisData } from "../types/analysis"
 import { analysisQueryFn, AnalysisQueryKey } from "../queries/analysis"
@@ -99,8 +99,8 @@ async function buildPGN(
 			analysisData = await analysisDataPromise
 		} catch (error) {
 			cancelled = true
-			// TODO: if 429 need to wait 1 minute before resuming
-			return
+			// Re-throw the error to be handled by caller
+			throw error
 		}
 		// return here in case an error happened in another call while awaiting
 		if (cancelled) return

@@ -5,9 +5,11 @@ import { createFileRoute } from "@tanstack/react-router";
 import { addMoveAtom, dbAtom, movesAtom, nextMoveCpsAtom } from "../atoms/explorer";
 import { analysisAtom } from "../atoms/analysis";
 import { uciListAtom, undoMoveAtom, fenAtom, gameAtom } from "../atoms/game";
-import { createStudyAtom, importPGNintoStudyAtom, studiesListAtom, studyIdAtom } from "../atoms/study";
+import { importPGNintoStudyAtom, studiesListAtom, studyIdAtom } from "../atoms/study";
 import { buildPGN } from "../util/game";
 import { Db } from "../types/explorer";
+import { rateLimitAtom } from "../atoms/rateLimit";
+import { RateLimitError, isRateLimitError } from "../util/rateLimit";
 
 export const Route = createFileRoute('/study')({
   component: Study,
@@ -20,7 +22,7 @@ function Study() {
 	const [, addMove] = useAtom(addMoveAtom)
 	const [, undoMove] = useAtom(undoMoveAtom)
 	const [fen] = useAtom(fenAtom)
-	const [{data: analysis, isPending}] = useAtom(analysisAtom)
+	const [{data: analysis}] = useAtom(analysisAtom)
 	const [nextMoveCps] = useAtom(nextMoveCpsAtom)
 	const [commonMovesCount, setCommonMovesCount] = useState(5)
 	const [playedPercent, setPlayedPercent] = useState(10)
@@ -31,8 +33,19 @@ function Study() {
 	const [pgn, setPgn] = useState<string>('')
 	const [studyId, setStudyId] = useAtom(studyIdAtom)
 	const [{data: studiesList}] = useAtom(studiesListAtom)
-	const [{ mutate: importPGNintoStudy, data: newStudyChapters, status }] = useAtom(importPGNintoStudyAtom)
+	const [{ mutate: importPGNintoStudy }] = useAtom(importPGNintoStudyAtom)
+	const [rateLimit, setRateLimit] = useAtom(rateLimitAtom)
 	const queryClient = useQueryClient();
+	
+	// Handle rate limit error from buildPGN
+	const handleRateLimit = (error: RateLimitError) => {
+		const waitTime = 60 * 1000 // 60 seconds in milliseconds
+		setRateLimit({
+			rateLimitUntil: Date.now() + waitTime,
+			lastRateLimitMessage: error.message
+		})
+	}
+	
 	console.log('studiesList', studiesList)
 
 	return <>
@@ -41,6 +54,16 @@ function Study() {
 	})}</p>
 	{fen}<br />
 
+	{/* Rate Limit Status */}
+	{rateLimit.isRateLimited && (
+		<div className="alert alert-warning mb-4">
+			<div>
+				<h3>Rate Limit Active</h3>
+				<p>{rateLimit.lastRateLimitMessage}</p>
+				<p>Please wait before making more requests.</p>
+			</div>
+		</div>
+	)}
 
 		Starting Position
 		{uciList.join(' ')}
@@ -153,14 +176,24 @@ function Study() {
 
 		<button onClick={async () => {
 			if (!analysis) return
-			const orientation = game.lastMove()!.color === 'w' ? 'white' : 'black'
-			const pgn = await buildPGN(queryClient, game, analysis, db, depth, commonMovesCount, playedPercent, bestMovesCount, myMoveMethod)
-			if (pgn) {
-				setPgn(pgn)
-				setGame({ game })
-				importPGNintoStudy({ pgn, orientation })
+			try {
+				const orientation = game.lastMove()!.color === 'w' ? 'white' : 'black'
+				const pgn = await buildPGN(queryClient, game, analysis, db, depth, commonMovesCount, playedPercent, bestMovesCount, myMoveMethod)
+				if (pgn) {
+					setPgn(pgn)
+					setGame({ game })
+					importPGNintoStudy({ pgn, orientation })
+				}
+			} catch (error) {
+				// Handle rate limit error
+				if (isRateLimitError(error)) {
+					handleRateLimit(error)
+				} else {
+					console.error('Error building PGN:', error)
+				}
 			}
-		}}>Go</button>
+		}} disabled={rateLimit.isRateLimited} className="btn btn-primary m-4">
+		</button>
 
 		<textarea value={pgn} readOnly className="textarea" />
 	</>
