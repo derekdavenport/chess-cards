@@ -7,6 +7,8 @@ export const fenAtom = atom<string>(get => get(gameAtom).game.fen())
 export const uciListAtom = atom<string[]>(get => get(gameAtom).game.history().map(move => move.uci))
 export const uciAtom = atom(get => get(uciListAtom).join(','))
 
+export const sanListAtom = atom<string[]>(get => get(gameAtom).game.history().map(move => move.san))
+
 export const undoMoveAtom = atom(null, (get, set) => {
 	const { game } = get(gameAtom)
 	game.undo()

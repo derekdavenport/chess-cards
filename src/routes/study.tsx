@@ -1,15 +1,17 @@
 import { useAtom } from "jotai"
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
-import { addMoveAtom, dbAtom, movesAtom, nextMoveCpsAtom } from "../atoms/explorer";
+import { addMoveAtom, dbAtom, movesAtom, nextMoveCpsAtom, openingAtom } from "../atoms/explorer";
 import { analysisAtom } from "../atoms/analysis";
-import { uciListAtom, undoMoveAtom, fenAtom, gameAtom } from "../atoms/game";
+import { uciListAtom, undoMoveAtom, fenAtom, gameAtom, sanListAtom } from "../atoms/game";
 import { importPGNintoStudyAtom, studiesListAtom, studyIdAtom } from "../atoms/study";
 import { buildPGN } from "../util/game";
 import { Db } from "../types/explorer";
 import { rateLimitAtom } from "../atoms/rateLimit";
 import { RateLimitError, isRateLimitError } from "../util/rateLimit";
+import { Move } from "cm-chess";
+import MoveCell from "../components/MoveCell";
 
 export const Route = createFileRoute('/study')({
   component: Study,
@@ -17,7 +19,7 @@ export const Route = createFileRoute('/study')({
 
 function Study() {
 	const [db, setDb] = useAtom(dbAtom)
-	const [uciList] = useAtom(uciListAtom)
+	const [sanList] = useAtom(sanListAtom)
 	const [{data: moves}] = useAtom(movesAtom)
 	const [, addMove] = useAtom(addMoveAtom)
 	const [, undoMove] = useAtom(undoMoveAtom)
@@ -35,7 +37,18 @@ function Study() {
 	const [{data: studiesList}] = useAtom(studiesListAtom)
 	const [{ mutate: importPGNintoStudy }] = useAtom(importPGNintoStudyAtom)
 	const [rateLimit, setRateLimit] = useAtom(rateLimitAtom)
+	const [{data: opening}] = useAtom(openingAtom)
 	const queryClient = useQueryClient();
+
+	useEffect(() => {
+		if (moves) {
+			const movesWithoutCp = moves.moves.filter(move => {
+				return !(move.uci in nextMoveCps)
+			})
+			movesWithoutCp.forEach(move => {
+			})
+		}
+	})
 	
 	// Handle rate limit error from buildPGN
 	const handleRateLimit = (error: RateLimitError) => {
@@ -48,11 +61,12 @@ function Study() {
 	
 	console.log('studiesList', studiesList)
 
+	const movesByTurn: [Move, Move][] = []
+	for (let i = 0; i < sanList.length; i += 2) {
+		movesByTurn.push([game.history()[i], game.history()[i + 1]])
+	}
+
 	return <>
-	<p>{studiesList && studiesList.map(study => {
-		return <div key={study.id}>{study.name}</div>
-	})}</p>
-	{fen}<br />
 
 	{/* Rate Limit Status */}
 	{rateLimit.isRateLimited && (
@@ -65,8 +79,25 @@ function Study() {
 		</div>
 	)}
 
-		Starting Position
-		{uciList.join(' ')}
+		{opening && <div className="text-center mb-4">{opening.eco} {opening.name}</div>}
+
+		{game.fen()}
+
+
+		<table className="table table-zebra w-full max-w-xs mx-auto">
+			<thead></thead>
+			<tbody>
+				{movesByTurn.map(([moveWhite, moveBlack], index) => {
+						return <tr key={index / 2}>
+							<th>{index + 1}</th>
+							<MoveCell move={moveWhite} cp={nextMoveCps[moveWhite.uci]} />
+							{moveBlack && <MoveCell move={moveBlack} cp={nextMoveCps[moveBlack.uci]} />}
+						</tr>
+					}
+				)}
+			</tbody>
+
+		</table>
 
 		<ol>
 			<li key="start" className="my-2">
@@ -155,6 +186,8 @@ function Study() {
 			/>
 			<p className="validator-hint">Must be between be 0 to 5</p>
 		</fieldset>
+
+		Include Highest Average Rated, Include Most Winning (played more than some %)
 
 		<fieldset className="fieldset w-full max-w-xs mx-auto">
 			<legend className="fieldset-legend">My Move</legend>

@@ -1,5 +1,5 @@
 import { atomWithQuery } from "jotai-tanstack-query";
-import { Db, ExplorerData } from "../types/explorer";
+import { Db, ExplorerData, Opening } from "../types/explorer";
 import { explorerQueryFn, ExplorerQueryKey } from "../queries/explorer";
 import { atom } from "jotai";
 import { fenAtom, gameAtom } from "./game";
@@ -39,4 +39,12 @@ export const movesAtom = atomWithQuery<ExplorerData, Error, ExplorerData, Explor
 	queryFn: explorerQueryFn,
 	staleTime: Infinity,
 	enabled: !get(rateLimitAtom).isRateLimited,
+}))
+
+export const openingAtom = atomWithQuery<ExplorerData, Error, Opening | null, ExplorerQueryKey>(get => ({
+	queryKey: ['explorer', get(dbAtom), get(gameAtom).game.fen()],
+	queryFn: explorerQueryFn,
+	staleTime: Infinity,
+	enabled: !get(rateLimitAtom).isRateLimited,
+	select: (data) => data.opening,
 }))

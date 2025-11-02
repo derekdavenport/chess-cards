@@ -26,7 +26,11 @@ function uciToMove(uci: string, game: Chess, lastMove: Move): AddMove {
 	return move
 }
 
-function getCpFromMoveComment({ commentMove }: Move): number | undefined {
+export function prettyEval(cp?: number): string {
+	return cp === undefined ? '' : (cp > 0 ? '+' : '') + (cp / 100).toFixed(2)
+}
+
+export function getCpFromMoveComment({ commentMove }: Move): number | undefined {
 	if (!commentMove) return
 	const ceMatch = commentMove.match(/\[%ce (\d+)\]/)
 	if (!ceMatch) return
