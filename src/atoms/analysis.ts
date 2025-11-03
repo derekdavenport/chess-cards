@@ -10,3 +10,14 @@ export const analysisAtom = atomWithQuery<AnalysisData, Error, AnalysisData, Ana
 	staleTime: Infinity,
 	enabled: !get(rateLimitAtom).isRateLimited,
 }))
+
+export const fenCpAtom = atomWithQuery<AnalysisData, Error, number | null, AnalysisQueryKey>(get => ({
+	queryKey: ['analysis', get(fenAtom)],
+	queryFn: analysisQueryFn,
+	staleTime: Infinity,
+	enabled: !get(rateLimitAtom).isRateLimited,
+	select: (data) => {
+		if ('error' in data || !data.pvs.length) return null
+		return data.pvs[0].cp
+	}
+}))
