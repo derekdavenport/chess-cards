@@ -2,14 +2,18 @@ import { useAtom } from "jotai"
 import { gameAtom } from "../atoms/game"
 import { Move } from "cm-chess"
 import { getCpFromMoveComment, prettyEval } from "../util/game"
+import { nextMoveCpsAtom } from "../atoms/explorer"
 
-function MoveCell({ move, cp }: { move: Move, cp: number | undefined }) {
+function MoveCell({ move }: { move?: Move }) {
 	const [{game}, setGame] = useAtom(gameAtom)
-	cp = getCpFromMoveComment(move) ?? cp
+	const [nextMoveCps] = useAtom(nextMoveCpsAtom)
 
 	if (!move) {
 		return <td></td>
 	}
+
+	const cp = getCpFromMoveComment(move) ?? nextMoveCps[move.uci]
+
 	if (move == game.lastMove()) {
 		return (
 			<td className="cursor-default">

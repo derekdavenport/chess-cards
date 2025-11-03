@@ -25,7 +25,7 @@ export const addMoveAtom = atom(null, (get, set, san: string) => {
 	const move = game.move(san)
 	const nextMoveCps = get(nextMoveCpsAtom)
 	const cp = nextMoveCps[move!.uci]
-	if (cp) {
+	if (cp !== undefined) {
 		move!.commentMove = `[%ce ${cp}][%eval ${(cp / 100).toFixed(2)}]`
 	}
 	set(gameAtom, { game })

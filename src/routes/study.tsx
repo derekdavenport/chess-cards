@@ -85,18 +85,21 @@ function Study() {
 
 
 		<table className="table table-zebra w-full max-w-xs mx-auto">
-			<thead></thead>
+			<colgroup>
+				<col className="w-auto" />
+				<col className="w-[50%]" />
+				<col className="w-[50%]" />
+			</colgroup>
 			<tbody>
 				{movesByTurn.map(([moveWhite, moveBlack], index) => {
 						return <tr key={index / 2}>
 							<th>{index + 1}</th>
-							<MoveCell move={moveWhite} cp={nextMoveCps[moveWhite.uci]} />
-							{moveBlack && <MoveCell move={moveBlack} cp={nextMoveCps[moveBlack.uci]} />}
+							<MoveCell move={moveWhite} />
+							<MoveCell move={moveBlack} />
 						</tr>
 					}
 				)}
 			</tbody>
-
 		</table>
 
 		<ol>
