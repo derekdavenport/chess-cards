@@ -14,13 +14,17 @@ function MoveCell({ move }: { move?: Move }) {
 
 	const cp = getCpFromMoveComment(move) ?? nextMoveCps[move.uci]
 
+	const inner = (
+		<div className="flex">
+			<div className="flex-1 font-bold">{move.san}</div>
+			<div className="flex-none">{prettyEval(cp)}</div>
+		</div>
+	)
+
 	if (move == game.lastMove()) {
 		return (
 			<td className="cursor-default">
-				<div className="flex">
-					<div className="flex-1 font-bold">{move.san}</div>
-					<div className="flex-none">{prettyEval(cp)}</div>
-				</div>
+				{inner}
 			</td>
 		)
 	}
@@ -31,10 +35,7 @@ function MoveCell({ move }: { move?: Move }) {
 				setGame({ game })
 			}}
 		>
-			<div className="flex">
-				<div className="flex-1 font-bold">{move.san}</div>
-				<div className="flex-none">{prettyEval(cp)}</div>
-			</div>
+			{inner}
 		</td>
 	)
 }
